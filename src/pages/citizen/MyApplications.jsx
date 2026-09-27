@@ -1,7 +1,9 @@
 import { Link } from "react-router-dom";
-import { transferRequests } from "../../data/sampleData";
+import { useRegistry } from "../../context/RegistryContext";
 
 export default function MyApplications() {
+  const { requestList } = useRegistry();
+
   return (
     <div style={{ fontFamily: "sans-serif", padding: 20 }}>
       <h2>My Applications</h2>
@@ -17,7 +19,7 @@ export default function MyApplications() {
           </tr>
         </thead>
         <tbody>
-          {transferRequests.map((r) => (
+          {requestList.map((r) => (
             <tr key={r.id}>
               <td>{r.id}</td>
               <td>{r.parcelId}</td>

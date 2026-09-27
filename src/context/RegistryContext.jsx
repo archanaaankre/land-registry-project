@@ -14,6 +14,21 @@ export function RegistryProvider({ children }) {
     );
   };
 
+  const addDispute = (parcelId, reason) => {
+    const newId = `DP-${String(disputeList.length + 1).padStart(3, "0")}`;
+    setDisputeList((prev) => [
+      ...prev,
+      { id: newId, parcelId, reason, status: "Pending" },
+    ]);
+    return newId;
+  };
+
+  const updateDisputeStatus = (id, newStatus) => {
+    setDisputeList((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, status: newStatus } : d))
+    );
+  };
+
   return (
     <RegistryContext.Provider
       value={{
@@ -24,6 +39,8 @@ export function RegistryProvider({ children }) {
         disputeList,
         setDisputeList,
         updateRequestStatus,
+        addDispute,
+        updateDisputeStatus,
       }}
     >
       {children}

@@ -1,14 +1,15 @@
 import { useState } from "react";
-import { transferRequests } from "../../data/sampleData";
+import { useRegistry } from "../../context/RegistryContext";
 
 export default function TrackStatus() {
+  const { requestList } = useRegistry();
   const [refId, setRefId] = useState("");
   const [result, setResult] = useState(null);
   const [searched, setSearched] = useState(false);
 
   const handleSearch = (e) => {
     e.preventDefault();
-    const found = transferRequests.find(
+    const found = requestList.find(
       (r) => r.id.toLowerCase() === refId.trim().toLowerCase()
     );
     setResult(found || null);

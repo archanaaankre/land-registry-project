@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { RegistryProvider } from "./context/RegistryContext";
 
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
@@ -21,27 +22,29 @@ import DisputeReview from "./pages/registrar/DisputeReview";
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/login" element={<Login />} />
+      <RegistryProvider>
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/login" element={<Login />} />
 
-        {/* Citizen routes */}
-        <Route path="/citizen/dashboard" element={<CitizenDashboard />} />
-        <Route path="/citizen/parcels" element={<ParcelSearch />} />
-        <Route path="/citizen/parcels/:id" element={<ParcelDetails />} />
-        <Route path="/citizen/transfer" element={<TransferRequest />} />
-        <Route path="/citizen/track" element={<TrackStatus />} />
-        <Route path="/citizen/applications" element={<MyApplications />} />
-        <Route path="/citizen/dispute" element={<RaiseDispute />} />
-        <Route path="/citizen/transactions" element={<Transactions />} />
+          {/* Citizen routes */}
+          <Route path="/citizen/dashboard" element={<CitizenDashboard />} />
+          <Route path="/citizen/parcels" element={<ParcelSearch />} />
+          <Route path="/citizen/parcels/:id" element={<ParcelDetails />} />
+          <Route path="/citizen/transfer" element={<TransferRequest />} />
+          <Route path="/citizen/track" element={<TrackStatus />} />
+          <Route path="/citizen/applications" element={<MyApplications />} />
+          <Route path="/citizen/dispute" element={<RaiseDispute />} />
+          <Route path="/citizen/transactions" element={<Transactions />} />
 
-        {/* Registrar routes */}
-        <Route path="/registrar/dashboard" element={<RegistrarDashboard />} />
-        <Route path="/registrar/requests" element={<Requests />} />
-        <Route path="/registrar/requests/:id" element={<RequestDetails />} />
-        <Route path="/registrar/verify/:id" element={<Verification />} />
-        <Route path="/registrar/disputes" element={<DisputeReview />} />
-      </Routes>
+          {/* Registrar routes */}
+          <Route path="/registrar/dashboard" element={<RegistrarDashboard />} />
+          <Route path="/registrar/requests" element={<Requests />} />
+          <Route path="/registrar/requests/:id" element={<RequestDetails />} />
+          <Route path="/registrar/verify/:id" element={<Verification />} />
+          <Route path="/registrar/disputes" element={<DisputeReview />} />
+        </Routes>
+      </RegistryProvider>
     </BrowserRouter>
   );
 }

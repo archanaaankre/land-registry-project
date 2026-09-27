@@ -1,9 +1,10 @@
 import { Link } from "react-router-dom";
-import { transferRequests } from "../../data/sampleData";
+import { useRegistry } from "../../context/RegistryContext";
 
 export default function RegistrarDashboard() {
-  const pending = transferRequests.filter((r) => r.status === "Pending").length;
-  const completed = transferRequests.filter((r) => r.status === "Completed").length;
+  const { requestList } = useRegistry();
+  const pending = requestList.filter((r) => r.status === "Pending").length;
+  const completed = requestList.filter((r) => r.status === "Completed").length;
 
   return (
     <div style={{ fontFamily: "sans-serif", padding: 20 }}>
@@ -19,6 +20,7 @@ export default function RegistrarDashboard() {
       </div>
 
       <nav style={{ marginBottom: 20 }}>
+        <Link to="/registrar/disputes">Dispute Review</Link>
         <Link to="/registrar/requests">View All Requests</Link>
       </nav>
 
@@ -32,7 +34,7 @@ export default function RegistrarDashboard() {
           </tr>
         </thead>
         <tbody>
-          {transferRequests
+          {requestList
             .filter((r) => r.status === "Pending")
             .map((r) => (
               <tr key={r.id}>

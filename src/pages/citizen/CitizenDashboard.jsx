@@ -23,6 +23,7 @@ export default function CitizenDashboard() {
         <Link to="/citizen/transfer">Transfer Request</Link>
         <Link to="/citizen/track">Track Status</Link>
         <Link to="/citizen/applications">My Applications</Link>
+        <Link to="/citizen/dispute">Raise Dispute</Link>
       </nav>
 
       <h3>Recent Transactions</h3>
