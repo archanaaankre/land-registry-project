@@ -1,4 +1,5 @@
 import { useRegistry } from "../../context/RegistryContext";
+import StatusBadge from "../../components/StatusBadge";
 
 export default function DisputeReview() {
   const { disputeList, updateDisputeStatus } = useRegistry();
@@ -23,7 +24,7 @@ export default function DisputeReview() {
               <td>{d.id}</td>
               <td>{d.parcelId}</td>
               <td>{d.reason}</td>
-              <td>{d.status}</td>
+              <td><StatusBadge status={d.status} /></td>
               <td>
                 {d.status === "Pending" ? (
                   <>

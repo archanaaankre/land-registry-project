@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useRegistry } from "../../context/RegistryContext";
+import StatusBadge from "../../components/StatusBadge";
 
 export default function TrackStatus() {
   const { requestList } = useRegistry();
@@ -39,7 +40,7 @@ export default function TrackStatus() {
               <p><strong>Parcel:</strong> {result.parcelId}</p>
               <p><strong>From:</strong> {result.from}</p>
               <p><strong>To:</strong> {result.to}</p>
-              <p><strong>Status:</strong> {result.status}</p>
+              <p><strong>Status:</strong> <StatusBadge status={result.status} /></p>
             </>
           ) : (
             <p>No application found with that reference number.</p>

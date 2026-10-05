@@ -1,5 +1,5 @@
-import { Link } from "react-router-dom";
 import { parcels, transactions, currentUser } from "../../data/sampleData";
+import StatusBadge from "../../components/StatusBadge";
 
 export default function CitizenDashboard() {
   return (
@@ -18,14 +18,6 @@ export default function CitizenDashboard() {
         </div>
       </div>
 
-      <nav style={{ marginBottom: 20, display: "flex", gap: 12 }}>
-        <Link to="/citizen/parcels">My Properties</Link>
-        <Link to="/citizen/transfer">Transfer Request</Link>
-        <Link to="/citizen/track">Track Status</Link>
-        <Link to="/citizen/applications">My Applications</Link>
-        <Link to="/citizen/dispute">Raise Dispute</Link>
-      </nav>
-
       <h3>Recent Transactions</h3>
       <table border="1" cellPadding="8" style={{ borderCollapse: "collapse" }}>
         <thead>
@@ -40,7 +32,7 @@ export default function CitizenDashboard() {
             <tr key={t.txnId}>
               <td>{t.txnId}</td>
               <td>{t.parcelId}</td>
-              <td>{t.status}</td>
+              <td><StatusBadge status={t.status} /></td>
             </tr>
           ))}
         </tbody>

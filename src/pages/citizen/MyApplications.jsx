@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useRegistry } from "../../context/RegistryContext";
+import StatusBadge from "../../components/StatusBadge";
 
 export default function MyApplications() {
   const { requestList } = useRegistry();
@@ -25,7 +26,7 @@ export default function MyApplications() {
               <td>{r.parcelId}</td>
               <td>{r.from}</td>
               <td>{r.to}</td>
-              <td>{r.status}</td>
+              <td><StatusBadge status={r.status} /></td>
             </tr>
           ))}
         </tbody>

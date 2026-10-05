@@ -1,3 +1,10 @@
 export default function StatusBadge({ status }) {
-  return <span>{status}</span>;
+  const className =
+    status === "Completed" || status === "Resolved"
+      ? "status-completed"
+      : status === "Rejected"
+      ? "status-rejected"
+      : "status-pending";
+
+  return <span className={className}>{status}</span>;
 }
