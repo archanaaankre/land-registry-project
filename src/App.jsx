@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import AdminDashboard from "./pages/admin/AdminDashboard";
 import { RegistryProvider } from "./context/RegistryContext";
 import Layout from "./components/Layout";
 
@@ -39,6 +40,8 @@ export default function App() {
           <Route path="/citizen/transactions" element={<Layout role="Citizen"><Transactions /></Layout>} />
 
           {/* Registrar routes — wrapped in Layout */}
+          {/* Admin route */}
+          <Route path="/admin/dashboard" element={<Layout role="Admin"><AdminDashboard /></Layout>} />    
           <Route path="/registrar/dashboard" element={<Layout role="Registrar"><RegistrarDashboard /></Layout>} />
           <Route path="/registrar/requests" element={<Layout role="Registrar"><Requests /></Layout>} />
           <Route path="/registrar/requests/:id" element={<Layout role="Registrar"><RequestDetails /></Layout>} />

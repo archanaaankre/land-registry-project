@@ -15,9 +15,14 @@ const registrarLinks = [
   { to: "/registrar/disputes", label: "Dispute Review" },
 ];
 
+const adminLinks = [
+  { to: "/admin/dashboard", label: "Dashboard" },
+];
+
 export default function Sidebar({ role }) {
   const location = useLocation();
-  const links = role === "Registrar" ? registrarLinks : citizenLinks;
+  const links =
+    role === "Registrar" ? registrarLinks : role === "Admin" ? adminLinks : citizenLinks;
 
   return (
     <div
