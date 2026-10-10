@@ -1,0 +1,19 @@
+from typing import Protocol
+
+from app.models import Ownership, Parcel
+
+
+class ParcelRepository(Protocol):
+    def find_by_id(self, parcel_id: str) -> Parcel | None: ...
+
+    def list_parcels(self) -> list[Parcel]: ...
+
+    def create_parcel(self, parcel: Parcel) -> Parcel: ...
+
+
+class OwnershipRepository(Protocol):
+    def find_by_id(self, ownership_id: str) -> Ownership | None: ...
+
+    def list_for_parcel(self, parcel_id: str) -> list[Ownership]: ...
+
+    def create_ownership(self, ownership: Ownership) -> Ownership: ...

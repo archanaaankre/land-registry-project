@@ -1,0 +1,104 @@
+# Secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Flask/runtime
+instance/
+*.log
+logs/
+
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Database backups
+database/backups/
+backups/
+*.dump
+*.backup
+
+# Private/local uploaded files
+uploads/
+storage/
+private_storage/
+documents/uploads/
+documents/private/
+
+# Node / React
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+frontend/build/
+frontend/dist/
+.next/
+.vite/
+.cache/
+
+# Hyperledger Fabric generated files
+blockchain/network/logs/
+blockchain/network/data/
+blockchain/network/organizations/
+blockchain/crypto-config/
+blockchain/tmp/
+blockchain/generated/
+
+# Chaincode dependencies
+blockchain/chaincode/*/node_modules/
+blockchain/chaincode/*/dist/
+
+# Docker local data
+docker-data/
+docker-volumes/
+
+# IDE
+.idea/
+*.iml
+.vs/
+
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# AI tool temporary files
+.opencode/
+.copilot/
