@@ -1,8 +1,18 @@
 import { useEffect, useState } from 'react'
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import './App.css'
+import { AuthProvider } from './context/AuthContext.jsx'
+import ProtectedRoute from './components/ProtectedRoute.jsx'
+import Login from './pages/Login.jsx'
+import Register from './pages/Register.jsx'
+import Dashboard from './pages/Dashboard.jsx'
+import Parcels from './pages/Parcels.jsx'
+import ParcelDetails from './pages/ParcelDetails.jsx'
 import { apiGet } from './services/api.js'
 
-function App() {
+const supportedRoles = ['CITIZEN', 'REGISTRAR', 'ADMIN']
+
+function BackendStatus() {
   const [health, setHealth] = useState({ state: 'loading' })
 
   useEffect(() => {
@@ -62,6 +72,35 @@ function App() {
         )}
       </section>
     </main>
+  )
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route element={<ProtectedRoute allowedRoles={supportedRoles} />}>
+        <Route element={<Outlet />} path="/">
+          <Route element={<Navigate replace to="/dashboard" />} index />
+          <Route element={<Dashboard />} path="dashboard" />
+          <Route element={<Parcels />} path="parcels" />
+          <Route element={<ParcelDetails />} path="parcels/:parcelId" />
+        </Route>
+      </Route>
+      <Route element={<Login />} path="/login" />
+      <Route element={<Register />} path="/register" />
+      <Route element={<BackendStatus />} path="/health" />
+      <Route element={<Navigate replace to="/" />} path="*" />
+    </Routes>
+  )
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
   )
 }
 

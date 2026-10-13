@@ -85,3 +85,421 @@ dd {
   background: #fff3f2;
   color: #8a2929;
 }
+
+.auth-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 2rem 1rem;
+}
+
+.auth-card {
+  width: min(100%, 28rem);
+  padding: clamp(1.5rem, 5vw, 2.5rem);
+  border: 1px solid #d9e2ec;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 1.25rem 3rem rgb(15 42 67 / 9%);
+}
+
+.auth-card h1 {
+  font-size: clamp(1.8rem, 6vw, 2.4rem);
+}
+
+.auth-intro {
+  margin: 0.85rem 0 1.5rem;
+  color: #526579;
+}
+
+.auth-form {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.auth-form label {
+  margin-top: 0.4rem;
+  color: #243b53;
+  font-size: 0.92rem;
+  font-weight: 650;
+}
+
+.auth-form input {
+  width: 100%;
+  min-height: 2.8rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #bcccdc;
+  border-radius: 0.5rem;
+  color: #243b53;
+}
+
+.auth-form input:focus {
+  border-color: #176b62;
+  outline: 3px solid rgb(23 107 98 / 16%);
+}
+
+.primary-button,
+.secondary-button {
+  min-height: 2.8rem;
+  padding: 0.65rem 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.primary-button {
+  margin-top: 0.65rem;
+  border: 1px solid #176b62;
+  background: #176b62;
+  color: #fff;
+}
+
+.secondary-button {
+  border: 1px solid #bcccdc;
+  background: #fff;
+  color: #243b53;
+}
+
+.primary-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.auth-switch {
+  margin: 1.5rem 0 0;
+  color: #526579;
+  text-align: center;
+}
+
+.auth-switch a,
+.dashboard-links a {
+  color: #176b62;
+  font-weight: 650;
+}
+
+.form-error {
+  margin: 0.3rem 0;
+  color: #8a2929;
+}
+
+.dashboard-card {
+  width: min(100%, 38rem);
+}
+
+.identity-details {
+  display: grid;
+  gap: 0.85rem;
+  margin: 1.5rem 0;
+}
+
+.identity-details div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e6edf3;
+}
+
+.identity-details dt {
+  font-weight: 650;
+}
+
+.identity-details dd {
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.dashboard-links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.dashboard-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.registry-page {
+  width: min(100%, 78rem);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: clamp(1.25rem, 4vw, 3rem);
+}
+
+.registry-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.registry-header h1 {
+  font-size: clamp(2rem, 5vw, 2.75rem);
+}
+
+.registry-intro {
+  margin: 0.75rem 0 0;
+  color: #526579;
+}
+
+.text-link {
+  flex: 0 0 auto;
+  color: #176b62;
+  font-weight: 650;
+}
+
+.registry-panel {
+  margin-bottom: 1.25rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid #d9e2ec;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 0.75rem 2rem rgb(15 42 67 / 5%);
+}
+
+.registry-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.registry-toolbar h2,
+.ownership-panel h2 {
+  margin: 0;
+  color: #16324f;
+  font-size: 1.35rem;
+}
+
+.result-count {
+  margin: 0.4rem 0 0;
+  color: #627d98;
+  font-size: 0.9rem;
+}
+
+.search-field {
+  display: grid;
+  width: min(100%, 24rem);
+  gap: 0.4rem;
+  color: #334e68;
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.search-field input {
+  width: 100%;
+  min-height: 2.7rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #bcccdc;
+  border-radius: 0.5rem;
+  color: #243b53;
+}
+
+.search-field input:focus {
+  border-color: #176b62;
+  outline: 3px solid rgb(23 107 98 / 16%);
+}
+
+.registry-state {
+  margin: 0;
+  padding: 1.25rem;
+  border-radius: 0.65rem;
+  background: #f1f6fb;
+  color: #35536f;
+}
+
+.error-state {
+  color: #8a2929;
+}
+
+.error-state p {
+  margin-top: 0;
+}
+
+.parcel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: 1rem;
+}
+
+.parcel-card,
+.ownership-record {
+  min-width: 0;
+  padding: 1.25rem;
+  border: 1px solid #e0e8ef;
+  border-radius: 0.8rem;
+  background: #fff;
+}
+
+.parcel-card-heading {
+  position: relative;
+  padding-right: 1rem;
+}
+
+.parcel-card h3 {
+  margin: 0.85rem 0 0;
+  overflow-wrap: anywhere;
+  color: #16324f;
+  font-size: 1.15rem;
+}
+
+.parcel-id {
+  margin: 0.4rem 0 0;
+  overflow-wrap: anywhere;
+  color: #627d98;
+  font-size: 0.85rem;
+}
+
+.status-badge {
+  display: inline-flex;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  background: #edf2f7;
+  color: #486581;
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+}
+
+.status-active {
+  background: #e4f5ed;
+  color: #145a3b;
+}
+
+.status-inactive {
+  background: #edf2f7;
+  color: #486581;
+}
+
+.status-disputed {
+  background: #fff1d6;
+  color: #8a5400;
+}
+
+.parcel-summary {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+}
+
+.parcel-summary div,
+.details-grid div,
+.ownership-record dl div {
+  display: grid;
+  grid-template-columns: minmax(6rem, 0.75fr) minmax(0, 1.25fr);
+  gap: 0.75rem;
+}
+
+.parcel-summary dt,
+.details-grid dt,
+.ownership-record dt {
+  color: #627d98;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.parcel-summary dd,
+.details-grid dd,
+.ownership-record dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #243b53;
+  text-align: left;
+}
+
+.parcel-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #176b62;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.parcel-link:hover,
+.text-link:hover,
+.auth-switch a:hover,
+.dashboard-links a:hover {
+  text-decoration: underline;
+}
+
+.details-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.details-heading .eyebrow {
+  margin-bottom: 0.4rem;
+}
+
+.details-heading h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #16324f;
+  font-size: clamp(1.35rem, 4vw, 1.8rem);
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin: 0;
+}
+
+.ownership-panel > .registry-toolbar {
+  margin-bottom: 1.25rem;
+}
+
+.ownership-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.ownership-record {
+  display: grid;
+  gap: 1rem;
+}
+
+.ownership-record dl {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .registry-header,
+  .registry-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .registry-header {
+    gap: 1rem;
+  }
+
+  .text-link {
+    align-self: flex-start;
+  }
+
+  .search-field {
+    width: 100%;
+  }
+
+  .details-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-links {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
