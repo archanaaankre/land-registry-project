@@ -29,6 +29,9 @@ export default function Dashboard() {
         <nav className="dashboard-links" aria-label="Account navigation">
           <div className="dashboard-navigation">
             <Link to="/parcels">Browse parcels</Link>
+            <Link to="/evaluation">Evaluation dashboard</Link>
+            {user?.role === 'CITIZEN' && <Link to="/transfers">Transfer requests</Link>}
+            {user?.role === 'REGISTRAR' && <Link to="/registrar/transfers">Review transfers</Link>}
             <Link to="/health">Backend status</Link>
           </div>
           <button className="secondary-button" onClick={handleLogout} type="button">
