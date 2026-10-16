@@ -1,10 +1,12 @@
 from pathlib import Path
 
 from flask import Flask, request
+from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 
 db = SQLAlchemy()
+migrate = Migrate()
 
 
 def create_app():
@@ -17,6 +19,10 @@ def create_app():
     app.config.from_object(Config)
 
     db.init_app(app)
+    migrate.init_app(app, db)
+
+    # Import ORM models so Flask-Migrate/Flask-SQLAlchemy metadata includes tables.
+    from app.persistence import models as _persistence_models  # noqa: F401
 
     from app.routes import bp
     app.register_blueprint(bp)

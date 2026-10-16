@@ -67,3 +67,9 @@ class ResourceNotFoundError(AuthError):
     code = "not_found"
     message = "The requested resource was not found."
     status_code = 404
+
+
+class ResourceConflictError(AuthError):
+    code = "conflict"
+    message = "The request conflicts with the current state."
+    status_code = 409

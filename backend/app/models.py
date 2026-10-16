@@ -62,3 +62,54 @@ class Ownership:
     status: OwnershipStatus
     created_at: datetime
     updated_at: datetime
+
+
+class TransferStatus(str, Enum):
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+    UNDER_REVIEW = "UNDER_REVIEW"
+    APPROVED = "APPROVED"
+    BLOCKCHAIN_PENDING = "BLOCKCHAIN_PENDING"
+    COMPLETED = "COMPLETED"
+    REJECTED = "REJECTED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class BlockchainSubmissionStatus(str, Enum):
+    NOT_SUBMITTED = "NOT_SUBMITTED"
+    PENDING = "PENDING"
+    SUBMITTED = "SUBMITTED"
+    CONFIRMED = "CONFIRMED"
+    FAILED = "FAILED"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+@dataclass(frozen=True)
+class TransferRequest:
+    request_id: str
+    parcel_id: str
+    seller_id: str
+    buyer_reference: str
+    status: TransferStatus
+    created_at: datetime
+    updated_at: datetime
+    reviewer_id: str | None = None
+    review_reason: str | None = None
+    reviewed_at: datetime | None = None
+    blockchain_tx_id: str | None = None
+    blockchain_status: BlockchainSubmissionStatus | None = None
+    failure_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class TransferAuditEvent:
+    event_id: str
+    request_id: str
+    event_type: str
+    actor_id: str
+    actor_role: Role
+    from_status: TransferStatus | None
+    to_status: TransferStatus
+    reason: str | None
+    created_at: datetime
