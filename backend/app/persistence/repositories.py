@@ -1,7 +1,8 @@
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 
 from app import db
-from app.auth.errors import InvalidInputError
+from app.auth.errors import InvalidInputError, ResourceConflictError
 from app.models import Role
 from app.persistence.errors import DatabaseUnavailableError
 from app.persistence.models import (
@@ -165,6 +166,52 @@ class SqlAlchemyTransferRepository:
         _commit()
         return model.to_domain()
 
+    def create_request_with_audit(self, request, event):
+        model = TransferRequestModel(
+            request_id=request.request_id,
+            parcel_id=request.parcel_id,
+            seller_id=request.seller_id,
+            buyer_reference=request.buyer_reference,
+            status=request.status.value,
+            reviewer_id=request.reviewer_id,
+            review_reason=request.review_reason,
+            reviewed_at=request.reviewed_at,
+            blockchain_tx_id=request.blockchain_tx_id,
+            blockchain_status=(
+                request.blockchain_status.value
+                if request.blockchain_status is not None
+                else None
+            ),
+            failure_reason=request.failure_reason,
+            created_at=request.created_at,
+            updated_at=request.updated_at,
+        )
+        db.session.add(model)
+        db.session.add(_audit_event_model(event))
+        try:
+            db.session.commit()
+        except IntegrityError as error:
+            db.session.rollback()
+            constraint_name = getattr(
+                getattr(error.orig, "diag", None), "constraint_name", None
+            )
+            is_active_transfer_conflict = (
+                constraint_name == "uq_transfer_requests_one_active_per_parcel"
+                or str(error.orig)
+                == "UNIQUE constraint failed: transfer_requests.parcel_id"
+            )
+            if is_active_transfer_conflict:
+                raise ResourceConflictError(
+                    "An active transfer request already exists for this parcel."
+                ) from None
+            raise InvalidInputError(
+                "A matching database record already exists."
+            ) from None
+        except SQLAlchemyError:
+            db.session.rollback()
+            raise DatabaseUnavailableError() from None
+        return model.to_domain()
+
     def find_by_id(self, request_id):
         model = _query(lambda: db.session.get(TransferRequestModel, request_id))
         return model.to_domain() if model is not None else None
@@ -235,18 +282,44 @@ class SqlAlchemyTransferRepository:
         _commit()
         return model.to_domain()
 
-    def record_audit_event(self, event):
-        model = TransferAuditEventModel(
-            event_id=event.event_id,
-            request_id=event.request_id,
-            actor_id=event.actor_id or None,
-            actor_role=event.actor_role.value,
-            event_type=event.event_type,
-            from_status=event.from_status.value if event.from_status is not None else None,
-            to_status=event.to_status.value,
-            reason=event.reason,
-            created_at=event.created_at,
+    def save_request_with_audit(self, request, expected_status, event):
+        result = _query(
+            lambda: db.session.execute(
+                update(TransferRequestModel)
+                .where(
+                    TransferRequestModel.request_id == request.request_id,
+                    TransferRequestModel.status == expected_status.value,
+                )
+                .values(
+                    parcel_id=request.parcel_id,
+                    seller_id=request.seller_id,
+                    buyer_reference=request.buyer_reference,
+                    status=request.status.value,
+                    reviewer_id=request.reviewer_id,
+                    review_reason=request.review_reason,
+                    reviewed_at=request.reviewed_at,
+                    blockchain_tx_id=request.blockchain_tx_id,
+                    blockchain_status=(
+                        request.blockchain_status.value
+                        if request.blockchain_status is not None
+                        else None
+                    ),
+                    failure_reason=request.failure_reason,
+                    updated_at=request.updated_at,
+                )
+            )
         )
+        if result.rowcount != 1:
+            db.session.rollback()
+            raise ResourceConflictError(
+                "The transfer request changed before this decision could be saved."
+            )
+        db.session.add(_audit_event_model(event))
+        _commit()
+        return request
+
+    def record_audit_event(self, event):
+        model = _audit_event_model(event)
         db.session.add(model)
         _commit()
         return event
@@ -280,6 +353,20 @@ class SqlAlchemyTransferRepository:
                 )
             )
         return domain_events
+
+
+def _audit_event_model(event):
+    return TransferAuditEventModel(
+        event_id=event.event_id,
+        request_id=event.request_id,
+        actor_id=event.actor_id or None,
+        actor_role=event.actor_role.value,
+        event_type=event.event_type,
+        from_status=event.from_status.value if event.from_status is not None else None,
+        to_status=event.to_status.value,
+        reason=event.reason,
+        created_at=event.created_at,
+    )
 
 
 def repository_bootstrap(app):

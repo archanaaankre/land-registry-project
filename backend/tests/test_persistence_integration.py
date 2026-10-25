@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from app import create_app, db
+from app.auth.errors import InvalidInputError, ResourceConflictError
 from app.auth.service import hash_password
 from app.models import (
     AreaUnit,
@@ -14,6 +15,8 @@ from app.models import (
     Parcel,
     ParcelStatus,
     Role,
+    TransferAuditEvent,
+    TransferRequest,
     TransferStatus,
     utc_now,
 )
@@ -226,6 +229,152 @@ def test_transfer_workflow_persists_to_database(tmp_path):
     event_types = [event["event_type"] for event in history]
     assert "TRANSFER_SUBMITTED" in event_types
     assert "TRANSFER_APPROVED" in event_types
+
+
+def test_active_transfer_constraint_handles_duplicate_requests_atomically(tmp_path):
+    database_url = _database_url(tmp_path)
+    app, user_repository, parcel_repository, _, transfer_repository = _prepare_app(database_url)
+    now = utc_now()
+    with app.app_context():
+        seller = user_repository.create_user(
+            name="Seller",
+            email="seller-constraint@example.com",
+            password_hash=hash_password("seller password"),
+            role=Role.CITIZEN,
+        )
+        parcel_repository.create_parcel(
+            Parcel(
+                parcel_id="parcel-constraint",
+                cadastral_number="CAD-C",
+                location="Ward C",
+                area=Decimal("10"),
+                area_unit=AreaUnit.HECTARES,
+                status=ParcelStatus.ACTIVE,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+        first = TransferRequest(
+            request_id="transfer-constraint-1",
+            parcel_id="parcel-constraint",
+            seller_id=seller.id,
+            buyer_reference="buyer-one@example.com",
+            status=TransferStatus.SUBMITTED,
+            created_at=now,
+            updated_at=now,
+        )
+        first_event = TransferAuditEvent(
+            event_id="event-constraint-1",
+            request_id=first.request_id,
+            event_type="TRANSFER_SUBMITTED",
+            actor_id=seller.id,
+            actor_role=Role.CITIZEN,
+            from_status=None,
+            to_status=TransferStatus.SUBMITTED,
+            reason=None,
+            created_at=now,
+        )
+        transfer_repository.create_request_with_audit(first, first_event)
+
+        second = TransferRequest(
+            request_id="transfer-constraint-2",
+            parcel_id="parcel-constraint",
+            seller_id=seller.id,
+            buyer_reference="buyer-two@example.com",
+            status=TransferStatus.SUBMITTED,
+            created_at=now,
+            updated_at=now,
+        )
+        second_event = TransferAuditEvent(
+            event_id="event-constraint-2",
+            request_id=second.request_id,
+            event_type="TRANSFER_SUBMITTED",
+            actor_id=seller.id,
+            actor_role=Role.CITIZEN,
+            from_status=None,
+            to_status=TransferStatus.SUBMITTED,
+            reason=None,
+            created_at=now,
+        )
+        with pytest.raises(ResourceConflictError):
+            transfer_repository.create_request_with_audit(second, second_event)
+
+        assert transfer_repository.find_by_id(second.request_id) is None
+        assert len(transfer_repository.list_audit_events(first.request_id)) == 1
+        assert transfer_repository.list_audit_events(second.request_id) == []
+
+
+def test_transfer_request_is_rolled_back_when_audit_event_cannot_be_saved(tmp_path):
+    database_url = _database_url(tmp_path)
+    app, user_repository, parcel_repository, _, transfer_repository = _prepare_app(database_url)
+    now = utc_now()
+    with app.app_context():
+        seller = user_repository.create_user(
+            name="Seller",
+            email="seller-rollback@example.com",
+            password_hash=hash_password("seller password"),
+            role=Role.CITIZEN,
+        )
+        parcel_repository.create_parcel(
+            Parcel(
+                parcel_id="parcel-rollback",
+                cadastral_number="CAD-R",
+                location="Ward R",
+                area=Decimal("10"),
+                area_unit=AreaUnit.HECTARES,
+                status=ParcelStatus.ACTIVE,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        original_request = TransferRequest(
+            request_id="transfer-rollback-1",
+            parcel_id="parcel-rollback",
+            seller_id=seller.id,
+            buyer_reference="buyer-one@example.com",
+            status=TransferStatus.SUBMITTED,
+            created_at=now,
+            updated_at=now,
+        )
+        duplicate_event = TransferAuditEvent(
+            event_id="event-duplicate",
+            request_id=original_request.request_id,
+            event_type="TRANSFER_SUBMITTED",
+            actor_id=seller.id,
+            actor_role=Role.CITIZEN,
+            from_status=None,
+            to_status=TransferStatus.SUBMITTED,
+            reason=None,
+            created_at=now,
+        )
+        transfer_repository.create_request_with_audit(original_request, duplicate_event)
+
+        rejected_request = TransferRequest(
+            request_id="transfer-rollback-2",
+            parcel_id="parcel-rollback",
+            seller_id=seller.id,
+            buyer_reference="buyer-two@example.com",
+            status=TransferStatus.REJECTED,
+            created_at=now,
+            updated_at=now,
+        )
+        rejected_event = TransferAuditEvent(
+            event_id="event-duplicate",
+            request_id=rejected_request.request_id,
+            event_type="TRANSFER_REJECTED",
+            actor_id=seller.id,
+            actor_role=Role.CITIZEN,
+            from_status=None,
+            to_status=TransferStatus.REJECTED,
+            reason="Rejected",
+            created_at=now,
+        )
+        with pytest.raises(InvalidInputError):
+            transfer_repository.create_request_with_audit(rejected_request, rejected_event)
+
+        assert transfer_repository.find_by_id(rejected_request.request_id) is None
+        assert transfer_repository.list_audit_events(rejected_request.request_id) == []
 
 
 def _login(client, email, password):

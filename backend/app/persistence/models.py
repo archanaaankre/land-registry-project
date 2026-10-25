@@ -4,9 +4,11 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Numeric,
     String,
     Text,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -140,6 +142,20 @@ class TransferRequestModel(db.Model):
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
     updated_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    __table_args__ = (
+        Index(
+            "uq_transfer_requests_one_active_per_parcel",
+            "parcel_id",
+            unique=True,
+            postgresql_where=text(
+                "status IN ('DRAFT','SUBMITTED','UNDER_REVIEW','APPROVED','BLOCKCHAIN_PENDING')"
+            ),
+            sqlite_where=text(
+                "status IN ('DRAFT','SUBMITTED','UNDER_REVIEW','APPROVED','BLOCKCHAIN_PENDING')"
+            ),
+        ),
+    )
 
     def to_domain(self):
         from app.models import TransferRequest

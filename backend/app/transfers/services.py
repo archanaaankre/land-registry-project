@@ -117,20 +117,35 @@ class TransferService:
             updated_at=now,
             blockchain_status=BlockchainSubmissionStatus.NOT_SUBMITTED,
         )
-        saved = repository.create_request(request)
-        repository.record_audit_event(
-            TransferAuditEvent(
-                event_id=f"event-{uuid.uuid4().hex}",
-                request_id=saved.request_id,
-                event_type="TRANSFER_SUBMITTED",
-                actor_id=seller_id,
-                actor_role=actor_role,
-                from_status=None,
-                to_status=TransferStatus.SUBMITTED,
-                reason=None,
-                created_at=now,
-            )
+        event = TransferAuditEvent(
+            event_id=f"event-{uuid.uuid4().hex}",
+            request_id=request.request_id,
+            event_type="TRANSFER_SUBMITTED",
+            actor_id=seller_id,
+            actor_role=actor_role,
+            from_status=None,
+            to_status=TransferStatus.SUBMITTED,
+            reason=None,
+            created_at=now,
         )
+        return self._create_request_with_audit(repository, request, event)
+
+    @staticmethod
+    def _create_request_with_audit(repository, request, event):
+        atomic_create = getattr(type(repository), "create_request_with_audit", None)
+        if atomic_create is not None:
+            return atomic_create(repository, request, event)
+        saved = repository.create_request(request)
+        repository.record_audit_event(event)
+        return saved
+
+    @staticmethod
+    def _save_request_with_audit(repository, request, expected_status, event):
+        atomic_save = getattr(type(repository), "save_request_with_audit", None)
+        if atomic_save is not None:
+            return atomic_save(repository, request, expected_status, event)
+        saved = repository.save_request(request)
+        repository.record_audit_event(event)
         return saved
 
     def _is_current_owner(self, seller_id: str, parcel_id: str) -> bool:
@@ -206,21 +221,20 @@ class TransferService:
             updated_at=now,
             review_reason=audit_reason if request.review_reason is None else request.review_reason,
         )
-        saved = repository.save_request(updated)
-        repository.record_audit_event(
-            TransferAuditEvent(
-                event_id=f"event-{uuid.uuid4().hex}",
-                request_id=saved.request_id,
-                event_type="TRANSFER_CANCELLED",
-                actor_id=actor_id,
-                actor_role=Role.CITIZEN,
-                from_status=request.status,
-                to_status=TransferStatus.CANCELLED,
-                reason=audit_reason,
-                created_at=now,
-            )
+        event = TransferAuditEvent(
+            event_id=f"event-{uuid.uuid4().hex}",
+            request_id=request.request_id,
+            event_type="TRANSFER_CANCELLED",
+            actor_id=actor_id,
+            actor_role=Role.CITIZEN,
+            from_status=request.status,
+            to_status=TransferStatus.CANCELLED,
+            reason=audit_reason,
+            created_at=now,
         )
-        return saved
+        return self._save_request_with_audit(
+            repository, updated, request.status, event
+        )
 
     def review_queue(self, role: Role):
         if role not in (Role.REGISTRAR, Role.ADMIN):
@@ -247,21 +261,20 @@ class TransferService:
             blockchain_status=BlockchainSubmissionStatus.UNAVAILABLE,
             failure_reason="Blockchain integration is not available; submission was not started.",
         )
-        saved = repository.save_request(updated)
-        repository.record_audit_event(
-            TransferAuditEvent(
-                event_id=f"event-{uuid.uuid4().hex}",
-                request_id=saved.request_id,
-                event_type="TRANSFER_APPROVED",
-                actor_id=registrar_id,
-                actor_role=Role.REGISTRAR,
-                from_status=request.status,
-                to_status=TransferStatus.APPROVED,
-                reason=reason,
-                created_at=now,
-            )
+        event = TransferAuditEvent(
+            event_id=f"event-{uuid.uuid4().hex}",
+            request_id=request.request_id,
+            event_type="TRANSFER_APPROVED",
+            actor_id=registrar_id,
+            actor_role=Role.REGISTRAR,
+            from_status=request.status,
+            to_status=TransferStatus.APPROVED,
+            reason=reason,
+            created_at=now,
         )
-        return saved
+        return self._save_request_with_audit(
+            repository, updated, request.status, event
+        )
 
     def reject_request(self, registrar_id: str, request_id: str, reason: str):
         repository = self._require_repository()
@@ -281,21 +294,20 @@ class TransferService:
             reviewed_at=now,
             review_reason=reason,
         )
-        saved = repository.save_request(updated)
-        repository.record_audit_event(
-            TransferAuditEvent(
-                event_id=f"event-{uuid.uuid4().hex}",
-                request_id=saved.request_id,
-                event_type="TRANSFER_REJECTED",
-                actor_id=registrar_id,
-                actor_role=Role.REGISTRAR,
-                from_status=request.status,
-                to_status=TransferStatus.REJECTED,
-                reason=reason,
-                created_at=now,
-            )
+        event = TransferAuditEvent(
+            event_id=f"event-{uuid.uuid4().hex}",
+            request_id=request.request_id,
+            event_type="TRANSFER_REJECTED",
+            actor_id=registrar_id,
+            actor_role=Role.REGISTRAR,
+            from_status=request.status,
+            to_status=TransferStatus.REJECTED,
+            reason=reason,
+            created_at=now,
         )
-        return saved
+        return self._save_request_with_audit(
+            repository, updated, request.status, event
+        )
 
     def _can_read(self, actor_id: str, role: Role, request: TransferRequest) -> bool:
         if role in (Role.REGISTRAR, Role.ADMIN):
@@ -325,4 +337,3 @@ class TransferService:
             "failure_reason": updates.get("failure_reason", request.failure_reason),
         }
         return TransferRequest(**values)
-
