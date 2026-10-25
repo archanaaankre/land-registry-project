@@ -45,7 +45,7 @@ export default function OwnershipTimeline({ data, loading, error, onRetry }) {
       <div className="evaluation-panel-heading">
         <h2 id="ownership-timeline-heading">Ownership traceability</h2>
         <p className="result-count">
-          {events.length} ownership record{events.length === 1 ? '' : 's'} from backend parcel/ownership endpoints.
+          {events.length} ownership record{events.length === 1 ? '' : 's'} from the application’s parcel records.
         </p>
       </div>
 
@@ -68,28 +68,20 @@ export default function OwnershipTimeline({ data, loading, error, onRetry }) {
                     <dd>{event.cadastralNumber} ({event.parcelId})</dd>
                   </div>
                   <div>
-                    <dt>Event</dt>
+                    <dt>Record type</dt>
                     <dd>{event.eventType}</dd>
                   </div>
                   <div>
-                    <dt>Recorded owner reference</dt>
-                    <dd>{event.ownerReference}</dd>
+                    <dt>Ownership record ID</dt>
+                    <dd>{event.ownershipRecordId}</dd>
                   </div>
                   <div>
-                    <dt>Prior recorded owner</dt>
-                    <dd>{event.previousOwnerReference ?? 'Not available'}</dd>
+                    <dt>Recorded owner</dt>
+                    <dd>{event.ownerReference}</dd>
                   </div>
                   <div>
                     <dt>Share</dt>
                     <dd>{event.share}%</dd>
-                  </div>
-                  <div>
-                    <dt>Blockchain transaction ID</dt>
-                    <dd>Not available</dd>
-                  </div>
-                  <div>
-                    <dt>Blockchain confirmation</dt>
-                    <dd>Not available — blockchain transaction status is not exposed.</dd>
                   </div>
                 </dl>
               </article>
@@ -112,8 +104,8 @@ export default function OwnershipTimeline({ data, loading, error, onRetry }) {
       <div className="evaluation-definition">
         <h3>Source and limits</h3>
         <p className="registry-state">
-          Source: {data?.source}. Records are displayed chronologically by recorded creation time. This view does not
-          create transfer events, and it does not imply that any database record was confirmed on a blockchain.
+          Source: parcel ownership records. Entries are displayed by their recorded creation time. They are not
+          inferred transfers; this API does not expose prior-owner transitions or blockchain confirmations here.
         </p>
       </div>
     </section>

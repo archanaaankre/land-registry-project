@@ -2,12 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth.js'
 import { listParcels } from '../services/parcelService.js'
+import PageHeader from '../components/layout/PageHeader.jsx'
 
-function describeParcelLoadError(error) {
-  if (error.status === 503 || error.code === 'registry_unavailable') {
-    return 'The parcel registry is temporarily unavailable. Its repository or persistence may not be configured yet.'
-  }
-  return error.message
+function describeParcelLoadError() {
+  return 'We couldn’t load the land records. Please try again.'
 }
 
 export default function Parcels() {
@@ -33,7 +31,7 @@ export default function Parcels() {
           navigate('/login', { replace: true })
           return
         }
-        setError(describeParcelLoadError(requestError))
+        setError(describeParcelLoadError())
       })
       .finally(() => {
         if (!controller.signal.aborted) {
@@ -68,14 +66,12 @@ export default function Parcels() {
 
   return (
     <main className="registry-page">
-      <header className="registry-header">
-        <div>
-          <p className="eyebrow">Land Registry</p>
-          <h1>Parcel registry</h1>
-          <p className="registry-intro">Browse registered parcels and their recorded details.</p>
-        </div>
-        <Link className="text-link" to="/dashboard">Back to dashboard</Link>
-      </header>
+      <PageHeader
+        actions={<Link className="text-link" to="/dashboard">Back to dashboard</Link>}
+        eyebrow="Land Registry"
+        intro="Browse registered parcels and their recorded details."
+        title="Parcel registry"
+      />
 
       <section className="registry-panel" aria-labelledby="parcels-heading">
         <div className="registry-toolbar">

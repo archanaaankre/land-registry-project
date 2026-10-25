@@ -12,7 +12,7 @@ export class ApiError extends Error {
 
 async function apiRequest(path, { method = 'GET', body, signal, token } = {}) {
   if (!API_BASE_URL) {
-    throw new ApiError('VITE_API_BASE_URL is not configured.')
+    throw new ApiError('This request could not be completed. Please try again later.')
   }
 
   const url = `${API_BASE_URL.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`
@@ -36,15 +36,15 @@ async function apiRequest(path, { method = 'GET', body, signal, token } = {}) {
     if (error.name === 'AbortError') {
       throw error
     }
-    throw new ApiError('Could not reach the backend. Check that Flask is running.')
+    throw new ApiError('This request could not be completed. Please try again.')
   }
 
   const contentType = response.headers.get('content-type') || ''
   if (!contentType.includes('application/json')) {
     throw new ApiError(
       response.ok
-        ? 'The backend returned an unexpected response.'
-        : `The backend request failed with status ${response.status}.`,
+        ? 'We received an unexpected response. Please try again.'
+        : 'This request could not be completed. Please try again.',
       response.status,
     )
   }
@@ -53,13 +53,17 @@ async function apiRequest(path, { method = 'GET', body, signal, token } = {}) {
   try {
     responseBody = await response.json()
   } catch {
-    throw new ApiError('The backend returned invalid JSON.', response.status)
+    throw new ApiError('We received an unexpected response. Please try again.', response.status)
   }
 
   if (!response.ok) {
     const error = responseBody?.error
+    const message =
+      response.status >= 500
+        ? 'This request could not be completed. Please try again.'
+        : error?.message || 'This request could not be completed. Please try again.'
     throw new ApiError(
-      error?.message || `The backend request failed with status ${response.status}.`,
+      message,
       response.status,
       error?.code || null,
       error?.field || null,

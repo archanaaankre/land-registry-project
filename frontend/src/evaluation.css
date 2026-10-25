@@ -11,40 +11,46 @@
   margin-bottom: 1.25rem;
 }
 
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 1rem;
+}
+
 .metric-card {
   min-width: 0;
   padding: 1.25rem;
-  border: 1px solid #d9e2ec;
-  border-radius: 0.9rem;
-  background: #fff;
-  box-shadow: 0 0.75rem 2rem rgb(15 42 67 / 5%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .metric-title {
   margin: 0 0 0.6rem;
-  color: #627d98;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
-  font-weight: 700;
-  text-transform: uppercase;
+  font-weight: var(--font-weight-bold);
   letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .metric-value {
   margin: 0;
-  color: #16324f;
+  color: var(--color-text);
   font-size: 2rem;
-  font-weight: 800;
+  font-weight: var(--font-weight-bold);
   line-height: 1;
 }
 
 .metric-unit {
   font-size: 1rem;
-  color: #627d98;
+  color: var(--color-text-muted);
 }
 
 .metric-detail {
   margin: 0.75rem 0 0;
-  color: #526579;
+  color: var(--color-text-muted);
   font-size: 0.88rem;
   line-height: 1.4;
 }
@@ -53,33 +59,54 @@
   display: inline-flex;
   margin-top: 0.85rem;
   padding: 0.25rem 0.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.75rem;
-  font-weight: 750;
+  font-weight: var(--font-weight-bold);
 }
 
-.metric-status-success {
-  background: #e4f5ed;
-  color: #145a3b;
+.metric-status-measured {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.metric-status-not-measured {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
 }
 
 .metric-status-unavailable {
-  background: #edf2f7;
-  color: #486581;
+  background: var(--color-secondary-soft);
+  color: var(--color-secondary);
+}
+
+.metric-sample-count {
+  margin: 0.65rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.evaluation-context {
+  margin: 0 0 1rem;
+  color: var(--color-text-muted);
+  line-height: var(--line-height-base);
+}
+
+.comparison-matrix {
+  min-width: 42rem;
 }
 
 .evaluation-panel {
   margin-bottom: 1.25rem;
   padding: clamp(1.25rem, 3vw, 2rem);
-  border: 1px solid #d9e2ec;
-  border-radius: 1rem;
-  background: #fff;
-  box-shadow: 0 0.75rem 2rem rgb(15 42 67 / 5%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .evaluation-panel h2 {
   margin: 0;
-  color: #16324f;
+  color: var(--color-text);
   font-size: 1.35rem;
 }
 
@@ -94,16 +121,16 @@
 
 .unavailable-state {
   padding: 1.25rem;
-  border: 1px dashed #bcccdc;
-  border-radius: 0.75rem;
-  background: #f7fafc;
-  color: #334e68;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-background);
+  color: var(--color-text-muted);
 }
 
 .unavailable-state strong {
   display: block;
   margin-bottom: 0.5rem;
-  color: #243b53;
+  color: var(--color-text);
 }
 
 .unavailable-state p {
@@ -114,12 +141,12 @@
 .evaluation-definition {
   margin-top: 1.25rem;
   padding-top: 1.25rem;
-  border-top: 1px solid #e6edf3;
+  border-top: 1px solid var(--color-border);
 }
 
 .evaluation-definition h3 {
   margin: 0 0 0.85rem;
-  color: #243b53;
+  color: var(--color-text);
   font-size: 1rem;
 }
 
@@ -136,32 +163,33 @@
 }
 
 .definition-list dt {
-  color: #627d98;
-  font-weight: 650;
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-semibold);
 }
 
 .definition-list dd {
   margin: 0;
-  color: #243b53;
+  color: var(--color-text);
   overflow-wrap: anywhere;
 }
 
 .evaluation-note {
   margin: 1rem 0;
   padding: 1rem;
-  border: 1px solid #f0c7c7;
-  border-radius: 0.65rem;
-  background: #fffaf8;
-  color: #5f3b3b;
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md);
+  background: var(--color-error-soft);
+  color: var(--color-error);
 }
 
 .evaluation-note strong {
   display: block;
   margin-bottom: 0.35rem;
-  color: #8a2929;
+  color: var(--color-error);
 }
 
-.evaluation-note p {
+.evaluation-note p,
+.evaluation-note ul {
   margin: 0;
 }
 
@@ -183,21 +211,21 @@
 .permission-matrix th,
 .permission-matrix td {
   padding: 0.8rem;
-  border-bottom: 1px solid #e6edf3;
+  border-bottom: 1px solid var(--color-border);
   text-align: left;
   vertical-align: top;
 }
 
 .permission-matrix thead th {
-  color: #627d98;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .permission-matrix tbody th {
-  color: #16324f;
-  font-weight: 650;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
 }
 
 .access-control-notes {
@@ -205,7 +233,7 @@
   gap: 0.65rem;
   margin: 1.25rem 0 0;
   padding-left: 1.25rem;
-  color: #526579;
+  color: var(--color-text-muted);
   line-height: 1.5;
 }
 
@@ -219,9 +247,9 @@
 
 .ownership-timeline-item article {
   padding: 1rem;
-  border: 1px solid #e0e8ef;
-  border-radius: 0.8rem;
-  background: #fbfdff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-background);
 }
 
 .timeline-heading {
@@ -235,7 +263,7 @@
 
 .timeline-timestamp {
   margin: 0;
-  color: #627d98;
+  color: var(--color-text-muted);
   font-size: 0.88rem;
 }
 
@@ -252,13 +280,13 @@
 }
 
 .timeline-details dt {
-  color: #627d98;
-  font-weight: 600;
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-semibold);
 }
 
 .timeline-details dd {
   margin: 0;
-  color: #243b53;
+  color: var(--color-text);
   overflow-wrap: anywhere;
 }
 
@@ -287,39 +315,39 @@
   display: flex;
   justify-content: space-between;
   gap: 1rem;
-  color: #243b53;
+  color: var(--color-text);
 }
 
 .performance-bar-track {
   height: 0.85rem;
   overflow: hidden;
-  border-radius: 999px;
-  background: #e6edf3;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
 }
 
 .performance-bar-fill {
   height: 100%;
-  border-radius: 999px;
-  background: #176b62;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
 }
 
 .performance-bar-fill-muted {
-  background: #9aa5b1;
+  background: var(--color-secondary);
 }
 
 .performance-bar-meta {
   margin: 0;
-  color: #627d98;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
 }
 
 .evaluation-page h3 {
   margin: 1.25rem 0 0.65rem;
-  color: #243b53;
+  color: var(--color-text);
 }
 
 .evaluation-methodology-panel {
-  background: #f8fbfd;
+  background: var(--color-surface);
 }
 
 @media (max-width: 640px) {
@@ -334,6 +362,7 @@
   width: 1px;
   height: 1px;
   margin: -1px;
+  padding: 0;
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;

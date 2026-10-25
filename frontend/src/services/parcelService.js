@@ -1,6 +1,20 @@
 import { ApiError, apiGet } from './api.js'
 import { getAccessToken, logoutUser } from './authService.js'
 
+function itemsFromResponse(data, identifier) {
+  if (
+    !Array.isArray(data?.items) ||
+    data.items.some(
+      (item) =>
+        typeof item?.[identifier] !== 'string' ||
+        !item[identifier].trim(),
+    )
+  ) {
+    throw new ApiError('We received an unexpected response. Please try again.')
+  }
+  return data.items
+}
+
 async function parcelRequest(path, options) {
   const token = getAccessToken()
   if (!token) {
@@ -19,10 +33,7 @@ async function parcelRequest(path, options) {
 
 export async function listParcels({ signal } = {}) {
   const { data } = await parcelRequest('/parcels', { signal })
-  if (!Array.isArray(data?.items)) {
-    throw new ApiError('The backend returned an invalid parcel list.')
-  }
-  return data.items
+  return itemsFromResponse(data, 'parcel_id')
 }
 
 export async function getParcel(parcelId, { signal } = {}) {
@@ -31,7 +42,7 @@ export async function getParcel(parcelId, { signal } = {}) {
     { signal },
   )
   if (!data?.parcel || typeof data.parcel.parcel_id !== 'string') {
-    throw new ApiError('The backend returned invalid parcel details.')
+    throw new ApiError('We received an unexpected response. Please try again.')
   }
   return data.parcel
 }
@@ -41,8 +52,5 @@ export async function getParcelOwnership(parcelId, { signal } = {}) {
     `/parcels/${encodeURIComponent(parcelId)}/ownership`,
     { signal },
   )
-  if (!Array.isArray(data?.items)) {
-    throw new ApiError('The backend returned an invalid ownership list.')
-  }
-  return data.items
+  return itemsFromResponse(data, 'ownership_id')
 }

@@ -8,6 +8,36 @@ function descriptionForError(error, fallback) {
   return error?.message || fallback
 }
 
+function transferFromResponse(data, requestId) {
+  const transfer = data?.transfer
+  if (
+    typeof transfer?.request_id !== 'string' ||
+    !transfer.request_id.trim() ||
+    typeof transfer.status !== 'string' ||
+    !transfer.status.trim() ||
+    (requestId && transfer.request_id !== requestId)
+  ) {
+    throw new ApiError('We received an unexpected response. Please try again.')
+  }
+  return transfer
+}
+
+function transferItemsFromResponse(data) {
+  if (
+    !Array.isArray(data?.items) ||
+    data.items.some(
+      (transfer) =>
+        typeof transfer?.request_id !== 'string' ||
+        !transfer.request_id.trim() ||
+        typeof transfer.status !== 'string' ||
+        !transfer.status.trim(),
+    )
+  ) {
+    throw new ApiError('We received an unexpected response. Please try again.')
+  }
+  return data.items
+}
+
 async function transferRequest(path, options, fallbackFailureMessage) {
   const token = getAccessToken()
   if (!token) {
@@ -32,10 +62,7 @@ export async function createTransfer(payload, { signal } = {}) {
 
   try {
     const { data } = await apiPost('/transfers', payload, { signal, token })
-    if (!data?.transfer) {
-      throw new ApiError('The backend returned an invalid transfer response.')
-    }
-    return data.transfer
+    return transferFromResponse(data)
   } catch (error) {
     if (error.status === 401) {
       logoutUser()
@@ -55,10 +82,7 @@ export async function listTransfers({ signal } = {}) {
     { signal },
     'Could not load transfer requests.',
   )
-  if (!Array.isArray(data?.items)) {
-    throw new ApiError('The backend returned an invalid transfer list.')
-  }
-  return data.items
+  return transferItemsFromResponse(data)
 }
 
 export async function getTransfer(requestId, { signal } = {}) {
@@ -67,12 +91,18 @@ export async function getTransfer(requestId, { signal } = {}) {
     { signal },
     'Could not load transfer request details.',
   )
-  if (!data?.transfer) {
-    throw new ApiError('The backend returned invalid transfer details.')
+  const transfer = transferFromResponse(data, requestId)
+  if (
+    !Array.isArray(data.history) ||
+    data.history.some(
+      (event) => typeof event?.event_id !== 'string' || !event.event_id.trim(),
+    )
+  ) {
+    throw new ApiError('We received an unexpected response. Please try again.')
   }
   return {
-    transfer: data.transfer,
-    history: Array.isArray(data.history) ? data.history : [],
+    transfer,
+    history: data.history,
   }
 }
 
@@ -88,10 +118,7 @@ export async function cancelTransfer(requestId, reason, { signal } = {}) {
       reason ? { reason } : undefined,
       { signal, token },
     )
-    if (!data?.transfer) {
-      throw new ApiError('The backend returned an invalid transfer response.')
-    }
-    return data.transfer
+    return transferFromResponse(data, requestId)
   } catch (error) {
     if (error.status === 401) {
       logoutUser()
@@ -108,10 +135,7 @@ export async function listRegistrarTransfers({ signal } = {}) {
 
   try {
     const { data } = await apiGet('/registrar/transfers', { signal, token })
-    if (!Array.isArray(data?.items)) {
-      throw new ApiError('The backend returned an invalid review queue.')
-    }
-    return data.items
+    return transferItemsFromResponse(data)
   } catch (error) {
     if (error.status === 401) {
       logoutUser()
@@ -133,10 +157,7 @@ export async function approveTransfer(requestId, reason, { signal } = {}) {
       body,
       { signal, token },
     )
-    if (!data?.transfer) {
-      throw new ApiError('The backend returned an invalid transfer response.')
-    }
-    return data.transfer
+    return transferFromResponse(data, requestId)
   } catch (error) {
     if (error.status === 401) {
       logoutUser()
@@ -157,10 +178,7 @@ export async function rejectTransfer(requestId, reason, { signal } = {}) {
       { reason },
       { signal, token },
     )
-    if (!data?.transfer) {
-      throw new ApiError('The backend returned an invalid transfer response.')
-    }
-    return data.transfer
+    return transferFromResponse(data, requestId)
   } catch (error) {
     if (error.status === 401) {
       logoutUser()
@@ -172,9 +190,9 @@ export async function rejectTransfer(requestId, reason, { signal } = {}) {
 export function transferStatusLabel(status) {
   const labels = {
     DRAFT: 'Draft',
-    SUBMITTED: 'Submitted',
-    UNDER_REVIEW: 'Under review',
-    APPROVED: 'Approved (blockchain not started)',
+    SUBMITTED: 'Submitted — awaiting registrar review',
+    UNDER_REVIEW: 'Registrar review in progress',
+    APPROVED: 'Approved by registrar',
     BLOCKCHAIN_PENDING: 'Blockchain pending',
     COMPLETED: 'Completed',
     REJECTED: 'Rejected',
@@ -183,4 +201,17 @@ export function transferStatusLabel(status) {
   }
 
   return labels[status] || status
+}
+
+export function blockchainStatusLabel(status) {
+  const labels = {
+    NOT_SUBMITTED: 'Not submitted',
+    PENDING: 'Pending',
+    SUBMITTED: 'Submitted',
+    CONFIRMED: 'Confirmed',
+    FAILED: 'Failed',
+    UNAVAILABLE: 'Unavailable',
+  }
+
+  return status ? labels[status] || status : 'Not available'
 }

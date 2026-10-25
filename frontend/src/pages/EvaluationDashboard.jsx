@@ -3,11 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth.js'
 import { getAccessToken, logoutUser } from '../services/authService.js'
 import '../evaluation.css'
-import {
-  getAccessControlSummary,
-  getOwnershipTraceability,
-  measureApiPerformance,
-} from '../services/evaluationService.js'
+import { getAccessControlSummary, getOwnershipTraceability, measureApiPerformance } from '../services/evaluationService.js'
+import PageHeader from '../components/layout/PageHeader.jsx'
 import MetricCard from '../components/evaluation/MetricCard.jsx'
 import TamperDetectionChart from '../components/evaluation/TamperDetectionChart.jsx'
 import DocumentIntegrityChart from '../components/evaluation/DocumentIntegrityChart.jsx'
@@ -26,7 +23,6 @@ export default function EvaluationDashboard() {
   const [performance, setPerformance] = useState(null)
   const [performanceLoading, setPerformanceLoading] = useState(false)
   const [performanceError, setPerformanceError] = useState('')
-  const [hasMeasured, setHasMeasured] = useState(false)
 
   const accessControl = getAccessControlSummary()
 
@@ -51,7 +47,7 @@ export default function EvaluationDashboard() {
         return
       }
       setTraceability(null)
-      setTraceabilityError(error?.message ?? 'Could not load ownership traceability.')
+      setTraceabilityError('We couldn’t load ownership history for this evaluation. Please try again.')
     } finally {
       if (!signal.aborted) {
         setTraceabilityLoading(false)
@@ -69,7 +65,6 @@ export default function EvaluationDashboard() {
         return
       }
       setPerformance(result)
-      setHasMeasured(true)
     } catch (error) {
       if (error?.name === 'AbortError' || signal.aborted) {
         return
@@ -80,7 +75,7 @@ export default function EvaluationDashboard() {
         navigate('/login', { replace: true })
         return
       }
-      setPerformanceError(error?.message ?? 'Could not measure API performance.')
+      setPerformanceError('The response-time measurement could not be completed. Please try again.')
     } finally {
       if (!signal.aborted) {
         setPerformanceLoading(false)
@@ -106,33 +101,22 @@ export default function EvaluationDashboard() {
     runPerformanceMeasurement(controller.signal)
   }
 
-  const parcelCount = traceability?.parcels?.length ?? null
-  const eventCount = traceability?.events?.length ?? null
-  const successRate = performance?.summary?.successRatePercent
-
   return (
     <main className="evaluation-page">
-      <header className="registry-header">
-        <div>
-          <p className="eyebrow">Evaluation &amp; security</p>
-          <h1>Evaluation & Security Dashboard</h1>
-          <p className="registry-intro">
-            Controlled evaluation of the implemented land-registry API. Metrics are derived from real backend responses
-            or documented unavailable states; no measured results are fabricated.
-          </p>
-        </div>
-        <Link className="text-link" to="/dashboard">
-          Back to account
-        </Link>
-      </header>
+      <PageHeader
+        actions={<Link className="text-link" to="/dashboard">Back to account</Link>}
+        eyebrow="Evaluation & security"
+        intro="A transparent summary of implemented data, measured API response times, and evaluation results that are not yet available. No results are fabricated."
+        title="Evaluation & Security Dashboard"
+      />
 
       <section className="registry-panel evaluation-methodology-panel" aria-labelledby="methodology-heading">
         <h2 id="methodology-heading">Evaluation scope and method</h2>
         <p>
-          This dashboard reports only implemented capabilities: authenticated API calls, parcel and ownership record
-          reads, configured authorization rules, and browser-measured API response times. Tamper detection, document
-          hashing/verification, transfer transactions, and blockchain integration are not implemented in the current
-          build and are shown as unavailable rather than as zero or successful results.
+          The dashboard separates configured policy from executed tests. API response times below are sampled from
+          real authenticated requests; they are not transaction processing or blockchain confirmation measurements.
+          No tamper-test results, document-hash results, access-control test outcomes, or blockchain transaction
+          measurements are currently exposed by the application.
         </p>
         <dl className="identity-details">
           <div>
@@ -140,41 +124,37 @@ export default function EvaluationDashboard() {
             <dd>{user?.role}</dd>
           </div>
           <div>
-            <dt>Session ID source</dt>
+            <dt>Session context</dt>
             <dd>Protected by the existing JWT session context; API calls use the user’s token.</dd>
           </div>
         </dl>
       </section>
 
-      <section className="summary-grid" aria-label="Summary metrics">
+      <section className="summary-grid" aria-label="Evaluation summary metrics">
         <MetricCard
-          detail="Loaded from GET /api/parcels when the registry repository is configured."
-          status={traceabilityLoading ? undefined : parcelCount !== null ? 'success' : 'unavailable'}
-          title="Parcel records loaded"
-          unavailable={!traceabilityLoading && parcelCount === null}
-          value={traceabilityLoading ? 'Loading…' : parcelCount}
+          detail="No modified-record evaluation runner or measured test results are available."
+          state="unavailable"
+          title="Tamper Detection"
         />
         <MetricCard
-          detail="Ownership rows loaded across parcel histories."
-          status={traceabilityLoading ? undefined : eventCount !== null ? 'success' : 'unavailable'}
-          title="Ownership records loaded"
-          unavailable={!traceabilityLoading && eventCount === null}
-          value={traceabilityLoading ? 'Loading…' : eventCount}
+          detail="Document upload and hash verification are not implemented, so no documents have been tested."
+          state="unavailable"
+          title="Document Integrity"
         />
         <MetricCard
-          detail="Computed from sampled API requests."
-          status={hasMeasured && Number.isFinite(successRate) ? 'success' : 'unavailable'}
-          title="API request success rate"
-          unavailable={!hasMeasured || !Number.isFinite(successRate)}
-          unit="%"
-          value={successRate}
+          detail="Authorization rules are configured, but no executed role-test results are exposed."
+          state="unavailable"
+          title="Access-Control Testing"
         />
         <MetricCard
-          detail="No blockchain network is integrated or measured."
-          status="unavailable"
-          title="Blockchain performance"
-          unavailable
-          value="Not measured"
+          detail="No end-to-end land-transfer transaction test results are available."
+          state="not-measured"
+          title="Transaction Success Rate"
+        />
+        <MetricCard
+          detail="Blockchain confirmation is not integrated or measured in this build."
+          state="unavailable"
+          title="Average Transaction Confirmation Time"
         />
       </section>
 
@@ -194,14 +174,65 @@ export default function EvaluationDashboard() {
         onMeasure={measurePerformance}
       />
 
+      <section className="evaluation-panel" aria-labelledby="comparison-heading">
+        <div className="evaluation-panel-heading">
+          <h2 id="comparison-heading">Traditional database and blockchain comparison</h2>
+          <p className="result-count">Evidence status for project demonstration</p>
+        </div>
+        <p className="evaluation-context">
+          This is a measurement-readiness comparison, not a claim that one storage approach performs or protects
+          records better. No matched traditional-database versus blockchain experiment has been run.
+        </p>
+        <div className="permission-matrix-wrapper">
+          <table className="permission-matrix comparison-matrix">
+            <caption className="sr-only">
+              Current evidence and comparison status for measurable land-registry properties.
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Property</th>
+                <th scope="col">Current project evidence</th>
+                <th scope="col">Comparative result</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Audit-trail visibility</th>
+                <td>Transfer request status history is available from the application API.</td>
+                <td>Not yet measured under matched conditions.</td>
+              </tr>
+              <tr>
+                <th scope="row">Modification detection</th>
+                <td>No tamper-test or document-hash verification results are available.</td>
+                <td>Not yet measured.</td>
+              </tr>
+              <tr>
+                <th scope="row">Authorization enforcement</th>
+                <td>Role rules are configured; executed test outcomes are not available.</td>
+                <td>Not yet measured.</td>
+              </tr>
+              <tr>
+                <th scope="row">Processing and confirmation time</th>
+                <td>Browser-measured API response time is available separately; blockchain confirmation time is not.</td>
+                <td>Not yet measured under matched conditions.</td>
+              </tr>
+              <tr>
+                <th scope="row">Failure rate and throughput</th>
+                <td>No transaction load-test dataset is available.</td>
+                <td>Not yet measured.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section className="registry-panel evaluation-definition" aria-labelledby="limitations-heading">
         <h2 id="limitations-heading">Test methodology and limitations</h2>
         <ul>
-          <li>Original, modified, tamper, and document-integrity datasets are not implemented; those sections are intentionally unavailable.</li>
-          <li>RBAC data lists configured backend roles and policy rules; no unauthorized-attempt test report is exposed.</li>
-          <li>Ownership history is built only from exposed parcel and ownership-read endpoints and is ordered by recorded creation time.</li>
-          <li>Performance values are browser-measured HTTP response times for sequential, non-destructive requests. They are not transaction throughput or blockchain finality measurements.</li>
-          <li>Backend registry calls return an unavailable state when the PostgreSQL repository is not configured, which is reported rather than hidden.</li>
+          <li>Tamper detection, document verification, and access-control test outcomes require dedicated evaluation datasets that are not currently exposed.</li>
+          <li>Ownership entries are read from parcel ownership records; they are not treated as transfer events or blockchain confirmations.</li>
+          <li>API performance values are browser-measured response times for sequential requests. They are not transaction throughput or blockchain finality measurements.</li>
+          <li>The database-versus-blockchain section identifies evidence gaps and does not present conceptual expectations as experimental results.</li>
         </ul>
       </section>
     </main>

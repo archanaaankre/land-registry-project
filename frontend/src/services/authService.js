@@ -16,7 +16,7 @@ function storeAccessToken(response) {
     typeof response.user.id !== 'string' ||
     !['CITIZEN', 'REGISTRAR', 'ADMIN'].includes(response.user.role)
   ) {
-    throw new ApiError('The backend returned an invalid authentication response.')
+    throw new ApiError('We received an unexpected response. Please try again.')
   }
 
   window.sessionStorage.setItem(TOKEN_STORAGE_KEY, response.access_token)
@@ -51,7 +51,7 @@ export async function getCurrentUser() {
       typeof user?.id !== 'string' ||
       !['CITIZEN', 'REGISTRAR', 'ADMIN'].includes(user.role)
     ) {
-      throw new ApiError('The backend returned an invalid current-user response.')
+      throw new ApiError('We received an unexpected response. Please try again.')
     }
     return user
   } catch (error) {

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth.js'
-import { listRegistrarTransfers } from '../services/transferService.js'
-import { transferStatusLabel } from '../services/transferService.js'
+import { listRegistrarTransfers, transferStatusLabel } from '../services/transferService.js'
+import PageHeader from '../components/layout/PageHeader.jsx'
 
 export default function RegistrarTransfers() {
   const { logout } = useAuth()
@@ -10,7 +10,7 @@ export default function RegistrarTransfers() {
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  // refresh is handled by a new page load
+  const [reloadKey, setReloadKey] = useState(0)
 
   const loadRequests = useCallback(async (signal) => {
     setLoading(true)
@@ -27,7 +27,9 @@ export default function RegistrarTransfers() {
       }
       if (!signal.aborted) {
         setRequests([])
-        setError(requestError.message)
+        setError(
+          requestError.message || 'We couldn’t load transfer requests for review. Please try again.',
+        )
       }
     } finally {
       if (!signal.aborted) setLoading(false)
@@ -38,21 +40,29 @@ export default function RegistrarTransfers() {
     const controller = new AbortController()
     Promise.resolve().then(() => loadRequests(controller.signal))
     return () => controller.abort()
-  }, [loadRequests])
+  }, [loadRequests, reloadKey])
 
   return (
     <main className="registry-page">
-      <header className="registry-header">
-        <div>
-          <p className="eyebrow">Registrar review</p>
-          <h1>Pending transfer requests</h1>
-          <p className="registry-intro">Review, approve, or reject requests awaiting decision.</p>
-        </div>
-        <div className="dashboard-navigation">
-          <Link className="text-link" to="/transfers">All transfers</Link>
-          <Link className="text-link" to="/dashboard">Back to account</Link>
-        </div>
-      </header>
+      <PageHeader
+        actions={
+          <div className="dashboard-navigation">
+            <button
+              className="secondary-button"
+              disabled={loading}
+              onClick={() => setReloadKey((current) => current + 1)}
+              type="button"
+            >
+              {loading ? 'Refreshing…' : 'Refresh queue'}
+            </button>
+            <Link className="text-link" to="/transfers">All transfers</Link>
+            <Link className="text-link" to="/dashboard">Back to account</Link>
+          </div>
+        }
+        eyebrow="Registrar review"
+        intro="Review, approve, or reject requests awaiting decision."
+        title="Pending transfer requests"
+      />
 
       {loading ? <p className="registry-state" role="status">Loading review queue…</p> : null}
       {!loading && error ? <p className="registry-state error-state" role="alert">{error}</p> : null}

@@ -11,11 +11,16 @@ export default function Dashboard() {
   }
 
   return (
-    <main className="auth-page">
-      <section className="auth-card dashboard-card" aria-labelledby="dashboard-title">
-        <p className="eyebrow">Authenticated workspace</p>
-        <h1 id="dashboard-title">Land Registry System</h1>
-        <p className="auth-intro">You are signed in with your verified account role.</p>
+    <main className="registry-page dashboard-page">
+      <header className="registry-header">
+        <div>
+          <p className="eyebrow">Authenticated workspace</p>
+          <h1 id="dashboard-title">Welcome{user.name ? `, ${user.name}` : ''}</h1>
+          <p className="registry-intro">Your land registry workspace and account details.</p>
+        </div>
+      </header>
+      <section className="registry-panel dashboard-card" aria-labelledby="account-heading">
+        <h2 id="account-heading">Account</h2>
         <dl className="identity-details">
           <div>
             <dt>Account</dt>
@@ -28,11 +33,10 @@ export default function Dashboard() {
         </dl>
         <nav className="dashboard-links" aria-label="Account navigation">
           <div className="dashboard-navigation">
-            <Link to="/parcels">Browse parcels</Link>
+            <Link to="/parcels">Browse parcel records</Link>
             <Link to="/evaluation">Evaluation dashboard</Link>
             {user?.role === 'CITIZEN' && <Link to="/transfers">Transfer requests</Link>}
             {user?.role === 'REGISTRAR' && <Link to="/registrar/transfers">Review transfers</Link>}
-            <Link to="/health">Backend status</Link>
           </div>
           <button className="secondary-button" onClick={handleLogout} type="button">
             Sign out

@@ -13,9 +13,10 @@ export default function PerformanceChart({ data, loading, error, onMeasure }) {
   return (
     <section className="evaluation-panel" aria-labelledby="performance-heading">
       <div className="evaluation-panel-heading">
-        <h2 id="performance-heading">Transaction performance</h2>
+        <h2 id="performance-heading">API response-time sampling</h2>
         <p className="result-count">
-          API response timing measurement. Blockchain metrics remain unavailable.
+          Measured browser request latency only. These samples do not represent transfer processing time,
+          throughput, or blockchain confirmation.
         </p>
       </div>
 
@@ -47,35 +48,27 @@ export default function PerformanceChart({ data, loading, error, onMeasure }) {
         <>
           <div className="metric-grid">
             <MetricCard
-              detail={`Across ${data.summary.successfulRequests + data.summary.failedRequests} sampled requests`}
-              status={data.summary.failedRequests === 0 ? 'success' : 'unavailable'}
-              title="API request success rate"
+              detail={`${data.summary.successfulRequests} succeeded and ${data.summary.failedRequests} failed in this sample.`}
+              sampleCount={data.sampleSize}
+              sampleLabel="requests sampled"
+              state={Number.isFinite(data.summary.successRatePercent) ? 'measured' : 'unavailable'}
+              title="Sampled API request success rate"
               unit="%"
               value={data.summary.successRatePercent}
             />
             <MetricCard
-              detail="Weighted average across sampled endpoints"
-              status={Number.isFinite(data.summary.weightedAverageResponseTimeMs) ? 'success' : 'unavailable'}
+              detail="Weighted average across the sequential current-user and parcel-list API samples."
+              sampleCount={data.sampleSize}
+              sampleLabel="requests sampled"
+              state={Number.isFinite(data.summary.weightedAverageResponseTimeMs) ? 'measured' : 'unavailable'}
               title="Average API response time"
               unit="ms"
               value={data.summary.weightedAverageResponseTimeMs}
             />
-            <MetricCard
-              detail={data.summary.blockchainNote}
-              status="unavailable"
-              title="Blockchain confirmation time"
-              unavailable
-            />
-            <MetricCard
-              detail={data.summary.failedTransactionNote}
-              status="unavailable"
-              title="Transaction throughput"
-              unavailable
-            />
           </div>
 
-          <h3>Endpoint timings</h3>
-          <div className="performance-chart" role="img" aria-label="Horizontal bar chart of average API response times by endpoint.">
+          <h3>Average response time by API</h3>
+          <div className="performance-chart" aria-label="Average response time by API endpoint, in milliseconds.">
             {(data.endpoints ?? []).map((endpoint) => {
               const average = endpoint.averageResponseTimeMs
               const width =
@@ -86,7 +79,11 @@ export default function PerformanceChart({ data, loading, error, onMeasure }) {
                     <strong>{endpoint.label}</strong>
                     <span>{formatLatency(average)}</span>
                   </div>
-                  <div className="performance-bar-track">
+                  <div
+                    aria-label={`${endpoint.label}: ${formatLatency(average)}`}
+                    className="performance-bar-track"
+                    role="img"
+                  >
                     <div
                       className={`performance-bar-fill ${endpoint.status === 'unavailable' ? 'performance-bar-fill-muted' : ''}`}
                       style={{ width }}
@@ -106,7 +103,7 @@ export default function PerformanceChart({ data, loading, error, onMeasure }) {
             <dl className="definition-list">
               <div>
                 <dt>What is measured</dt>
-                <dd>{data.measurementType}; frontend request completion time for configured API endpoints.</dd>
+                <dd>Browser-measured completion time for authenticated current-user and parcel-list API requests.</dd>
               </div>
               <div>
                 <dt>Units</dt>
@@ -125,12 +122,11 @@ export default function PerformanceChart({ data, loading, error, onMeasure }) {
                 <dd>Sequential only. No destructive or concurrent load test was run.</dd>
               </div>
               <div>
-                <dt>Blockchain metric</dt>
-                <dd>{data.summary.blockchainNote}</dd>
-              </div>
-              <div>
-                <dt>Mismatched note</dt>
-                <dd>HTTP response time is not blockchain finality time; confirmed-transaction timing is not measured.</dd>
+                <dt>Transaction and blockchain metrics</dt>
+                <dd>
+                  Not yet measured. API response time does not measure land-transfer processing, transaction
+                  throughput, or blockchain confirmation time.
+                </dd>
               </div>
             </dl>
           </div>

@@ -4,20 +4,14 @@ import { listParcels, getParcelOwnership } from './parcelService.js'
 const MEASUREMENT_SAMPLE_SIZE = 5
 const PERFORMANCE_ENDPOINTS = [
   {
-    key: 'health',
-    label: 'Health endpoint',
-    path: '/health',
-    requiresAuthentication: false,
-  },
-  {
     key: 'auth-me',
-    label: 'Current-user endpoint',
+    label: 'Current-user API',
     path: '/auth/me',
     requiresAuthentication: true,
   },
   {
     key: 'parcels',
-    label: 'Parcel list endpoint',
+    label: 'Parcel list API',
     path: '/parcels',
     requiresAuthentication: true,
   },
@@ -107,6 +101,18 @@ export const ACCESS_CONTROL_POLICY = {
       allowedRoles: ['REGISTRAR'],
       notes: 'OWNERSHIP_RECORD_ROLES contains only REGISTRAR. No public write endpoint is currently exposed.',
     },
+    {
+      key: 'submit-transfer',
+      label: 'Submit a transfer request',
+      allowedRoles: ['CITIZEN'],
+      notes: 'POST /api/transfers uses TRANSFER_SUBMIT_ROLES.',
+    },
+    {
+      key: 'review-transfer',
+      label: 'Approve or reject a transfer request',
+      allowedRoles: ['REGISTRAR'],
+      notes: 'Registrar transfer decisions use TRANSFER_REVIEW_ROLES.',
+    },
   ],
   measuredResults: null,
 }
@@ -116,7 +122,7 @@ export function getAccessControlSummary() {
     status: 'policy_only',
     policy: ACCESS_CONTROL_POLICY,
     message:
-      'The matrix below reflects configured backend authorization rules. No RBAC test result dataset or unauthorized-attempt report is exposed by the API.',
+      'The matrix below reflects configured authorization rules. No RBAC test result dataset or unauthorized-attempt report is available.',
     countsAvailable: false,
   }
 }
@@ -135,14 +141,17 @@ export async function getOwnershipTraceability({ token, signal }) {
     if (error?.name === 'AbortError') {
       throw error
     }
+    if (error?.status === 401) {
+      throw error
+    }
     return {
       status: 'unavailable',
       source: 'GET /api/parcels',
       parcels: [],
       events: [],
-      errors: [describeBackendError(error, 'parcel list')],
+      errors: ['We could not load ownership records. Please try again.'],
       message:
-        'Parcel and ownership records cannot be loaded from the backend. This is the expected state when the registry repository is not configured.',
+        'Ownership records could not be loaded. Please try again later.',
     }
   }
 
@@ -154,11 +163,12 @@ export async function getOwnershipTraceability({ token, signal }) {
   )
 
   const events = []
-  const lastOwnerByParcel = new Map()
-
   for (const result of ownershipResults) {
     if (result.status === 'rejected') {
       if (result.reason?.name === 'AbortError') {
+        throw result.reason
+      }
+      if (result.reason?.status === 401) {
         throw result.reason
       }
       errors.push(describeBackendError(result.reason, 'ownership records'))
@@ -173,21 +183,19 @@ export async function getOwnershipTraceability({ token, signal }) {
     })
 
     for (const record of orderedRecords) {
-      const previousOwner = lastOwnerByParcel.get(parcel.parcel_id) ?? null
       events.push({
         id: `${parcel.parcel_id}-${record.ownership_id}-${record.created_at}`,
         parcelId: parcel.parcel_id,
         cadastralNumber: parcel.cadastral_number,
+        ownershipRecordId: record.ownership_id,
         ownerReference: record.owner_id,
-        previousOwnerReference: previousOwner,
-        eventType: 'Ownership record available',
+        eventType: 'Recorded ownership row',
         timestamp: record.created_at,
         recordStatus: record.status,
         share: record.share,
         transactionId: null,
         blockchainConfirmation: 'not_available',
       })
-      lastOwnerByParcel.set(parcel.parcel_id, record.owner_id)
     }
   }
 
@@ -199,16 +207,16 @@ export async function getOwnershipTraceability({ token, signal }) {
     errors,
     message:
       parcels.length === 0
-        ? 'No parcel records are currently available from the backend.'
-        : 'Events are generated from recorded ownership rows. No transfer workflow or blockchain transaction ID is exposed by the current backend.',
+        ? 'No ownership records are available yet.'
+        : 'Entries come from parcel ownership records. They do not represent transfer events or blockchain confirmations.',
   }
 }
 
 function describeBackendError(error, subject) {
   if (error?.status === 503 || error?.code === 'registry_unavailable') {
-    return `The ${subject} registry is temporarily unavailable.`
+    return `We could not complete the ${subject} request. Please try again.`
   }
-  return `${subject}: ${error?.message ?? 'Request failed'}`
+  return `We could not complete the ${subject} request. Please try again.`
 }
 
 export async function measureApiPerformance({ token, signal }) {
@@ -221,7 +229,7 @@ export async function measureApiPerformance({ token, signal }) {
         status: 'unavailable',
         sampleSize: 0,
         successfulRequests: 0,
-        failedRequests: MEASUREMENT_SAMPLE_SIZE,
+        failedRequests: 0,
         averageResponseTimeMs: null,
         minimumResponseTimeMs: null,
         maximumResponseTimeMs: null,
@@ -257,6 +265,9 @@ export async function measureApiPerformance({ token, signal }) {
       } catch (error) {
         if (error?.name === 'AbortError' || signal?.aborted) {
           throw error?.name === 'AbortError' ? error : new DOMException('Aborted', 'AbortError')
+        }
+        if (error?.status === 401) {
+          throw error
         }
         failedRequests += 1
         requestError = describeBackendError(error, endpoint.label)
@@ -314,7 +325,7 @@ export async function measureApiPerformance({ token, signal }) {
     sequentialRequests: true,
     concurrentLoad: false,
     measurementConditions:
-      'Sequential requests from the browser to the configured backend origin. No authentication header is sent to /health; authenticated endpoints use the current session token.',
+      'Sequential requests from the browser to authenticated current-user and parcel-list endpoints using the current session token.',
     destructiveLoadTest: false,
     measuredAt: new Date().toISOString(),
     endpoints: endpointResults,

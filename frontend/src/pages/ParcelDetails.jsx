@@ -2,17 +2,17 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/useAuth.js'
 import { getParcel, getParcelOwnership } from '../services/parcelService.js'
+import PageHeader from '../components/layout/PageHeader.jsx'
 
-function describeLoadError(error, kind) {
-  if (error.status === 503 || error.code === 'registry_unavailable') {
-    return `The ${kind} registry is temporarily unavailable. Its repository or persistence may not be configured yet.`
-  }
-  return error.message
+function describeLoadError(kind) {
+  return kind === 'ownership'
+    ? 'We couldn’t load ownership history. Please try again.'
+    : 'We couldn’t load this parcel. Please try again.'
 }
 
 export default function ParcelDetails() {
   const { parcelId } = useParams()
-  const { logout } = useAuth()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [parcel, setParcel] = useState(null)
   const [ownership, setOwnership] = useState([])
@@ -48,7 +48,7 @@ export default function ParcelDetails() {
     } else {
       setParcel(null)
       if (parcelResult.reason.name !== 'AbortError') {
-        setParcelError(describeLoadError(parcelResult.reason, 'parcel'))
+        setParcelError(describeLoadError('parcel'))
       }
     }
 
@@ -57,7 +57,7 @@ export default function ParcelDetails() {
     } else {
       setOwnership([])
       if (ownershipResult.reason.name !== 'AbortError') {
-        setOwnershipError(describeLoadError(ownershipResult.reason, 'ownership'))
+        setOwnershipError(describeLoadError('ownership'))
       }
     }
     setLoadedForParcelId(parcelId)
@@ -81,17 +81,18 @@ export default function ParcelDetails() {
   }
 
   const isLoading = loading || loadedForParcelId !== parcelId
+  const isCurrentOwner = ownership.some(
+    (record) => record.status === 'ACTIVE' && record.owner_id === user?.id,
+  )
 
   return (
     <main className="registry-page">
-      <header className="registry-header">
-        <div>
-          <p className="eyebrow">Land Registry</p>
-          <h1>Parcel details</h1>
-          <p className="registry-intro">Parcel identifier: {parcelId}</p>
-        </div>
-        <Link className="text-link" to="/parcels">Back to parcels</Link>
-      </header>
+      <PageHeader
+        actions={<Link className="text-link" to="/parcels">Back to parcels</Link>}
+        eyebrow="Land Registry"
+        intro={`Parcel identifier: ${parcelId}`}
+        title="Parcel details"
+      />
 
       {isLoading && <p className="registry-state registry-panel" role="status">Loading parcel details…</p>}
       {!isLoading && (
@@ -166,6 +167,15 @@ export default function ParcelDetails() {
                   ))}
                 </div>
               )}
+              {!ownershipError && user?.role === 'CITIZEN' && isCurrentOwner ? (
+                <Link
+                  className="primary-button"
+                  state={{ parcelId: parcel.parcel_id }}
+                  to="/transfers"
+                >
+                  Request a transfer
+                </Link>
+              ) : null}
             </section>
           )}
         </>

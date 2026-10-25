@@ -6,29 +6,41 @@ export default function TamperDetectionChart({ summary = getTamperDetectionSumma
       <div className="evaluation-panel-heading">
         <h2 id="tamper-detection-heading">Tamper detection</h2>
         <p className="result-count">
-          Controlled test summary; unavailable until a tamper-detection implementation and test results exist.
+          Not yet measured — no controlled modified-record test results are available.
         </p>
       </div>
 
       <div className="unavailable-state" role="status">
-        <strong>{summary.title}: no test results available</strong>
+        <strong>{summary.title}: unavailable</strong>
         <p>{summary.message}</p>
       </div>
 
       <div className="evaluation-definition">
-        <h3>Methodology</h3>
+        <h3>Results required for a detection rate</h3>
         <dl className="definition-list">
           <div>
-            <dt>Detection rate</dt>
-            <dd>{summary.formula}</dd>
+            <dt>Modified records tested</dt>
+            <dd>Not yet measured.</dd>
+          </div>
+          <div>
+            <dt>Correctly detected</dt>
+            <dd>Not yet measured.</dd>
+          </div>
+          <div>
+            <dt>Not detected / unexpected outcomes</dt>
+            <dd>Not yet measured.</dd>
+          </div>
+          <div>
+            <dt>Detection rate formula</dt>
+            <dd>Correctly detected modified records / total modified records tested × 100.</dd>
+          </div>
+          <div>
+            <dt>Unmodified records tested</dt>
+            <dd>Not yet measured; this count would be reported separately from modified-record detection.</dd>
           </div>
           <div>
             <dt>Denominator rule</dt>
             <dd>{summary.denominatorRule}</dd>
-          </div>
-          <div>
-            <dt>Currently counted attempts</dt>
-            <dd>None; no tamper-detection tests were executed by this dashboard.</dd>
           </div>
         </dl>
       </div>
