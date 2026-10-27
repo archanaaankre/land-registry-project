@@ -4,7 +4,12 @@ from app.auth.api_service import AuthApiService
 from app.auth.decorators import roles_required
 from app.auth.errors import InvalidInputError
 from app.models import Ownership, Parcel, Role, TransferRequest
-from app.registry.authorization import OWNERSHIP_READ_ROLES, PARCEL_READ_ROLES
+from app.registry.authorization import (
+    OWNERSHIP_READ_ROLES,
+    OWNERSHIP_RECORD_ROLES,
+    PARCEL_MANAGE_ROLES,
+    PARCEL_READ_ROLES,
+)
 from app.registry.services import OwnershipService, ParcelService
 from app.persistence.repositories import repository_bootstrap
 from app.transfers.authorization import (
@@ -120,6 +125,13 @@ def list_parcels():
     return jsonify({"items": [_parcel_response(parcel) for parcel in parcels]})
 
 
+@bp.route("/parcels", methods=["POST"])
+@roles_required(*PARCEL_MANAGE_ROLES)
+def create_parcel():
+    parcel = _parcel_service().create_parcel(_json_body())
+    return jsonify({"parcel": _parcel_response(parcel)}), 201
+
+
 @bp.route("/parcels/<parcel_id>", methods=["GET"])
 @roles_required(*PARCEL_READ_ROLES)
 def get_parcel(parcel_id):
@@ -132,6 +144,13 @@ def get_parcel(parcel_id):
 def list_parcel_ownership(parcel_id):
     records = _ownership_service().list_for_parcel(parcel_id)
     return jsonify({"items": [_ownership_response(record) for record in records]})
+
+
+@bp.route("/ownership", methods=["POST"])
+@roles_required(*OWNERSHIP_RECORD_ROLES)
+def create_ownership():
+    ownership = _ownership_service().create_ownership(_json_body())
+    return jsonify({"ownership": _ownership_response(ownership)}), 201
 
 
 def _transfer_response(transfer: TransferRequest):

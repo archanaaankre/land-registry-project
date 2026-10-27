@@ -145,6 +145,68 @@ def test_parcel_and_ownership_records_are_persisted_and_protected(tmp_path):
     assert unauthenticated.status_code == 401
 
 
+def test_registrar_creates_parcels_and_ownership_through_api(tmp_path):
+    database_url = _database_url(tmp_path)
+    app, user_repository, _, _, _ = _prepare_app(database_url)
+    client = app.test_client()
+
+    with app.app_context():
+        registrar = user_repository.create_user(
+            name="Registrar",
+            email="registry-registrar@example.com",
+            password_hash=hash_password("registrar password"),
+            role=Role.REGISTRAR,
+        )
+    citizen_registration = client.post(
+        "/api/auth/register",
+        json=_registration_payload("registry-owner@example.com"),
+    )
+    assert citizen_registration.status_code == 201
+    owner_id = _json(citizen_registration)["user"]["id"]
+    registrar_token = _login(
+        client, registrar.email, "registrar password"
+    )
+    headers = {"Authorization": f"Bearer {registrar_token}"}
+
+    parcel_payload = {
+        "parcel_id": "parcel-api-created",
+        "cadastral_number": "CAD-API",
+        "location": "Ward API",
+        "area": 12.5,
+        "area_unit": "HECTARES",
+        "status": "ACTIVE",
+    }
+    created_parcel = client.post(
+        "/api/parcels", json=parcel_payload, headers=headers
+    )
+    assert created_parcel.status_code == 201
+    assert _json(created_parcel)["parcel"]["parcel_id"] == "parcel-api-created"
+
+    ownership_payload = {
+        "ownership_id": "ownership-api-created",
+        "parcel_id": "parcel-api-created",
+        "owner_id": owner_id,
+        "share": 100,
+        "status": "ACTIVE",
+    }
+    created_ownership = client.post(
+        "/api/ownership", json=ownership_payload, headers=headers
+    )
+    assert created_ownership.status_code == 201
+    assert _json(created_ownership)["ownership"]["owner_id"] == owner_id
+
+    duplicate_parcel = client.post(
+        "/api/parcels", json=parcel_payload, headers=headers
+    )
+    duplicate_ownership = client.post(
+        "/api/ownership", json=ownership_payload, headers=headers
+    )
+    assert duplicate_parcel.status_code == 400
+    assert duplicate_ownership.status_code == 400
+    assert _json(duplicate_parcel)["error"]["code"] == "invalid_input"
+    assert _json(duplicate_ownership)["error"]["code"] == "invalid_input"
+
+
 def test_transfer_workflow_persists_to_database(tmp_path):
     database_url = _database_url(tmp_path)
     app, user_repository, parcel_repository, ownership_repository, _ = _prepare_app(database_url)

@@ -519,6 +519,12 @@ dd {
   margin-bottom: 1.5rem;
 }
 
+.parcel-toolbar-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
 .registry-toolbar h2,
 .ownership-panel h2 {
   margin: 0;
@@ -562,6 +568,29 @@ dd {
   border-radius: var(--radius-md);
   background: var(--color-surface);
   color: var(--color-text-muted);
+}
+
+.parcel-success {
+  margin-bottom: 1rem;
+  border-color: var(--color-success);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.parcel-registration-form {
+  margin-bottom: 1.5rem;
+  color: var(--color-text);
+}
+
+.parcel-registration-form h3 {
+  margin: 0 0 1rem;
+}
+
+.parcel-registration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
 }
 
 .error-state {
@@ -928,6 +957,11 @@ dd {
 
   .search-field {
     width: 100%;
+  }
+
+  .parcel-toolbar-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .details-grid {

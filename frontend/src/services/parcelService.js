@@ -1,4 +1,4 @@
-import { ApiError, apiGet } from './api.js'
+import { ApiError, apiGet, apiPost } from './api.js'
 import { getAccessToken, logoutUser } from './authService.js'
 
 function itemsFromResponse(data, identifier) {
@@ -34,6 +34,26 @@ async function parcelRequest(path, options) {
 export async function listParcels({ signal } = {}) {
   const { data } = await parcelRequest('/parcels', { signal })
   return itemsFromResponse(data, 'parcel_id')
+}
+
+export async function createParcel(payload, { signal } = {}) {
+  const token = getAccessToken()
+  if (!token) {
+    throw new ApiError('Your session has expired. Sign in again.', 401, 'missing_authentication')
+  }
+
+  try {
+    const { data } = await apiPost('/parcels', payload, { signal, token })
+    if (typeof data?.parcel?.parcel_id !== 'string' || !data.parcel.parcel_id.trim()) {
+      throw new ApiError('We received an unexpected response. Please try again.')
+    }
+    return data.parcel
+  } catch (error) {
+    if (error.status === 401) {
+      logoutUser()
+    }
+    throw error
+  }
 }
 
 export async function getParcel(parcelId, { signal } = {}) {
