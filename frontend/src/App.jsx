@@ -13,8 +13,11 @@ import TransferRequests from './pages/TransferRequests.jsx'
 import TransferRequestDetails from './pages/TransferRequestDetails.jsx'
 import RegistrarTransfers from './pages/RegistrarTransfers.jsx'
 import Landing from './pages/Landing.jsx'
+import AdminUsers from './pages/AdminUsers.jsx'
 
-const supportedRoles = ['CITIZEN', 'REGISTRAR', 'ADMIN']
+const supportedRoles = ['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER', 'ADMIN']
+const parcelRoles = ['CITIZEN', 'REGISTRAR', 'ADMIN']
+const transferReadRoles = ['CITIZEN', 'REGISTRAR', 'ADMIN']
 
 function AppRoutes() {
   return (
@@ -26,13 +29,20 @@ function AppRoutes() {
       <Route element={<ProtectedRoute allowedRoles={supportedRoles} />}>
         <Route element={<AppLayout />}>
           <Route element={<Dashboard />} path="dashboard" />
-          <Route element={<Parcels />} path="parcels" />
-          <Route element={<ParcelDetails />} path="parcels/:parcelId" />
-          <Route element={<EvaluationDashboard />} path="evaluation" />
-          <Route element={<TransferRequests />} path="transfers" />
-          <Route element={<TransferRequestDetails />} path="transfers/:requestId" />
+          <Route element={<ProtectedRoute allowedRoles={parcelRoles} />}>
+            <Route element={<Parcels />} path="parcels" />
+            <Route element={<ParcelDetails />} path="parcels/:parcelId" />
+            <Route element={<EvaluationDashboard />} path="evaluation" />
+          </Route>
+          <Route element={<ProtectedRoute allowedRoles={transferReadRoles} />}>
+            <Route element={<TransferRequests />} path="transfers" />
+            <Route element={<TransferRequestDetails />} path="transfers/:requestId" />
+          </Route>
           <Route element={<ProtectedRoute allowedRoles={['REGISTRAR']} />} path="registrar/transfers">
             <Route element={<RegistrarTransfers />} index />
+          </Route>
+          <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />} path="admin/users">
+            <Route element={<AdminUsers />} index />
           </Route>
         </Route>
       </Route>

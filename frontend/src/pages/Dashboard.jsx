@@ -4,6 +4,7 @@ import { useAuth } from '../context/useAuth.js'
 export default function Dashboard() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const canBrowseRegistry = ['CITIZEN', 'REGISTRAR', 'ADMIN'].includes(user?.role)
 
   function handleLogout() {
     logout()
@@ -33,8 +34,8 @@ export default function Dashboard() {
         </dl>
         <nav className="dashboard-links" aria-label="Account navigation">
           <div className="dashboard-navigation">
-            <Link to="/parcels">Browse parcel records</Link>
-            <Link to="/evaluation">Evaluation dashboard</Link>
+            {canBrowseRegistry && <Link to="/parcels">Browse parcel records</Link>}
+            {canBrowseRegistry && <Link to="/evaluation">Evaluation dashboard</Link>}
             {user?.role === 'CITIZEN' && <Link to="/transfers">Transfer requests</Link>}
             {user?.role === 'REGISTRAR' && <Link to="/registrar/transfers">Review transfers</Link>}
           </div>

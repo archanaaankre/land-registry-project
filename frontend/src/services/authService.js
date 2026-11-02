@@ -14,7 +14,9 @@ function storeAccessToken(response) {
     response.token_type.toLowerCase() !== 'bearer' ||
     !response.user ||
     typeof response.user.id !== 'string' ||
-    !['CITIZEN', 'REGISTRAR', 'ADMIN'].includes(response.user.role)
+    !['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER', 'ADMIN'].includes(
+      response.user.role,
+    )
   ) {
     throw new ApiError('We received an unexpected response. Please try again.')
   }
@@ -49,7 +51,9 @@ export async function getCurrentUser() {
     const user = data?.user
     if (
       typeof user?.id !== 'string' ||
-      !['CITIZEN', 'REGISTRAR', 'ADMIN'].includes(user.role)
+      !['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER', 'ADMIN'].includes(
+        user.role,
+      )
     ) {
       throw new ApiError('We received an unexpected response. Please try again.')
     }
