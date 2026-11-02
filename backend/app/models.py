@@ -100,6 +100,10 @@ class TransferRequest:
     blockchain_tx_id: str | None = None
     blockchain_status: BlockchainSubmissionStatus | None = None
     failure_reason: str | None = None
+    # Canonical buyer identity resolved at submission. None only for legacy
+    # records created before this field existed; those fall back to resolving
+    # buyer_reference and are never silently reassigned.
+    buyer_id: str | None = None
 
 
 @dataclass(frozen=True)

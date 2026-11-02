@@ -6,11 +6,17 @@ from app.models import TransferAuditEvent, TransferRequest, TransferStatus
 class TransferRepository(Protocol):
     def create_request(self, request: TransferRequest) -> TransferRequest: ...
 
+    def create_request_with_audit(
+        self, request: TransferRequest, event: TransferAuditEvent
+    ) -> TransferRequest: ...
+
     def find_by_id(self, request_id: str) -> TransferRequest | None: ...
 
     def list_for_seller(self, seller_id: str) -> list[TransferRequest]: ...
 
     def list_for_buyer_reference(self, buyer_reference: str) -> list[TransferRequest]: ...
+
+    def list_for_buyer_id(self, buyer_id: str) -> list[TransferRequest]: ...
 
     def list_pending_for_review(self) -> list[TransferRequest]: ...
 
@@ -18,7 +24,26 @@ class TransferRepository(Protocol):
 
     def find_active_for_parcel(self, parcel_id: str) -> TransferRequest | None: ...
 
+    def list_completed_for_parcel(self, parcel_id: str) -> list[TransferRequest]: ...
+
     def save_request(self, request: TransferRequest) -> TransferRequest: ...
+
+    def save_request_with_audit(
+        self,
+        request: TransferRequest,
+        expected_status: TransferStatus,
+        event: TransferAuditEvent,
+    ) -> TransferRequest: ...
+
+    def finalize_ownership(
+        self,
+        request: TransferRequest,
+        *,
+        expected_status: TransferStatus,
+        buyer_id: str,
+        buyer_ownership_id: str,
+        event: TransferAuditEvent,
+    ) -> TransferRequest: ...
 
     def record_audit_event(self, event: TransferAuditEvent) -> TransferAuditEvent: ...
 

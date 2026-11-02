@@ -59,6 +59,8 @@ def bearer(app, role):
         ("/api/parcels", PARCEL_READ_ROLES),
         ("/api/parcels/parcel-1", PARCEL_READ_ROLES),
         ("/api/parcels/parcel-1/ownership", OWNERSHIP_READ_ROLES),
+        ("/api/parcels/parcel-1/ownership/current", OWNERSHIP_READ_ROLES),
+        ("/api/parcels/parcel-1/ownership/history", OWNERSHIP_READ_ROLES),
     ],
 )
 def test_read_contracts_authorize_all_roles_then_report_unavailable(
@@ -147,6 +149,7 @@ def test_registrar_can_record_ownership_for_existing_parcel(app, client):
         updated_at=datetime.now(timezone.utc),
     )
     ownership_repository = Mock()
+    ownership_repository.list_for_parcel.return_value = []
     ownership_repository.create_ownership.side_effect = lambda ownership: ownership
     app.config["PARCEL_REPOSITORY"] = parcel_repository
     app.config["OWNERSHIP_REPOSITORY"] = ownership_repository

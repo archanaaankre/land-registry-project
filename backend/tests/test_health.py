@@ -44,6 +44,7 @@ def test_post_preflight_allows_local_vite_origin_and_required_headers(origin):
     assert set(response.headers["Access-Control-Allow-Methods"].split(", ")) == {
         "GET",
         "POST",
+        "PATCH",
         "OPTIONS",
     }
     assert {

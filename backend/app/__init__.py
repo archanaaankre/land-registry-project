@@ -43,7 +43,9 @@ def create_app():
         origin = request.headers.get("Origin")
         if origin in _LOCAL_VITE_ORIGINS:
             response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            response.headers["Access-Control-Allow-Methods"] = (
+                "GET, POST, PATCH, OPTIONS"
+            )
             response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
             response.headers.add("Vary", "Origin")
         return response

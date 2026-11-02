@@ -6,6 +6,7 @@ from unittest.mock import Mock
 import pytest
 
 from app import create_app
+from app.auth.errors import ResourceConflictError
 from app.auth.service import create_access_token
 from app.models import (
     AreaUnit,
@@ -18,6 +19,7 @@ from app.models import (
     TransferStatus,
     User,
 )
+from app.transfers.services import TransferService
 from app.transfers.authorization import (
     TRANSFER_READ_ROLES,
     TRANSFER_REVIEW_ROLES,
@@ -170,8 +172,7 @@ def test_transfer_submission_does_not_change_ownership(app, client):
     transfer = make_transfer(status=TransferStatus.SUBMITTED)
     transfer_repository = Mock()
     transfer_repository.find_active_for_parcel.return_value = None
-    transfer_repository.create_request.return_value = transfer
-    transfer_repository.record_audit_event.side_effect = lambda event: event
+    transfer_repository.create_request_with_audit.return_value = transfer
     parcel_repository = Mock()
     parcel_repository.find_by_id.return_value = parcel_record()
     ownership_repository = Mock()
@@ -190,6 +191,112 @@ def test_transfer_submission_does_not_change_ownership(app, client):
     assert response.status_code == 201
     assert response.get_json()["transfer"]["status"] == "SUBMITTED"
     ownership_repository.assert_not_called()
+
+
+def test_transfer_submission_accepts_buyer_user_id(app, client):
+    transfer_repository = Mock()
+    transfer_repository.find_active_for_parcel.return_value = None
+    transfer_repository.create_request_with_audit.side_effect = (
+        lambda request, event: request
+    )
+    parcel_repository = Mock()
+    parcel_repository.find_by_id.return_value = parcel_record()
+    ownership_repository = Mock()
+    ownership_repository.list_for_parcel.return_value = [ownership_record()]
+    user_repository = Mock()
+    user_repository.get_user_by_id.return_value = user_record()
+    configure_repositories(
+        app, transfer_repository, parcel_repository, ownership_repository, user_repository
+    )
+
+    response = client.post(
+        "/api/transfers",
+        headers=bearer(app, Role.CITIZEN),
+        json={"parcel_id": "parcel-1", "buyer_reference": "buyer-1"},
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()["transfer"]["buyer_reference"] == "buyer-1"
+    user_repository.get_user_by_id.assert_called_once_with("buyer-1")
+
+
+@pytest.mark.parametrize("status", [ParcelStatus.INACTIVE, ParcelStatus.DISPUTED])
+def test_transfer_submission_rejects_non_active_parcel(app, client, status):
+    transfer_repository = Mock()
+    parcel = parcel_record()
+    parcel = parcel.__class__(**{**parcel.__dict__, "status": status})
+    parcel_repository = Mock()
+    parcel_repository.find_by_id.return_value = parcel
+    ownership_repository = Mock()
+    ownership_repository.list_for_parcel.return_value = [ownership_record()]
+    user_repository = Mock()
+    configure_repositories(
+        app, transfer_repository, parcel_repository, ownership_repository, user_repository
+    )
+
+    response = client.post(
+        "/api/transfers",
+        headers=bearer(app, Role.CITIZEN),
+        json={"parcel_id": "parcel-1", "buyer_reference": "buyer@example.com"},
+    )
+
+    assert response.status_code == 409
+    transfer_repository.create_request_with_audit.assert_not_called()
+
+
+def test_transfer_submission_rejects_partial_or_coowned_parcel(app, client):
+    transfer_repository = Mock()
+    parcel_repository = Mock()
+    parcel_repository.find_by_id.return_value = parcel_record()
+    coownership = ownership_record()
+    coownership = coownership.__class__(
+        **{**coownership.__dict__, "share": Decimal("50")}
+    )
+    other_owner = ownership_record(owner_id="citizen-2")
+    other_owner = other_owner.__class__(
+        **{**other_owner.__dict__, "share": Decimal("50")}
+    )
+    ownership_repository = Mock()
+    ownership_repository.list_for_parcel.return_value = [coownership, other_owner]
+    user_repository = Mock()
+    configure_repositories(
+        app, transfer_repository, parcel_repository, ownership_repository, user_repository
+    )
+
+    response = client.post(
+        "/api/transfers",
+        headers=bearer(app, Role.CITIZEN),
+        json={"parcel_id": "parcel-1", "buyer_reference": "buyer@example.com"},
+    )
+
+    assert response.status_code == 409
+    transfer_repository.create_request_with_audit.assert_not_called()
+
+
+def test_transfer_submission_rejects_non_citizen_buyer(app, client):
+    transfer_repository = Mock()
+    parcel_repository = Mock()
+    parcel_repository.find_by_id.return_value = parcel_record()
+    ownership_repository = Mock()
+    ownership_repository.list_for_parcel.return_value = [ownership_record()]
+    user_repository = Mock()
+    registrar_buyer = user_record()
+    registrar_buyer = registrar_buyer.__class__(
+        **{**registrar_buyer.__dict__, "role": Role.REGISTRAR}
+    )
+    user_repository.get_user_by_email.return_value = registrar_buyer
+    configure_repositories(
+        app, transfer_repository, parcel_repository, ownership_repository, user_repository
+    )
+
+    response = client.post(
+        "/api/transfers",
+        headers=bearer(app, Role.CITIZEN),
+        json={"parcel_id": "parcel-1", "buyer_reference": "buyer@example.com"},
+    )
+
+    assert response.status_code == 400
+    transfer_repository.create_request_with_audit.assert_not_called()
 
 
 def test_buyer_lookup_rejects_unknown_buyer(app, client):
@@ -256,6 +363,36 @@ def test_rejection_requires_reason(app, client):
     assert response.status_code == 400
 
 
+def test_registrar_can_reject_request_and_audit_reason(app, client):
+    pending = make_transfer(status=TransferStatus.SUBMITTED)
+    rejected = pending.__class__(
+        **{
+            **pending.__dict__,
+            "status": TransferStatus.REJECTED,
+            "review_reason": "Ownership evidence is incomplete",
+        }
+    )
+    transfer_repository = Mock()
+    transfer_repository.find_by_id.return_value = pending
+    transfer_repository.save_request_with_audit.return_value = rejected
+    configure_repositories(app, transfer_repository, Mock(), Mock(), Mock())
+
+    response = client.post(
+        "/api/registrar/transfers/request-1/reject",
+        headers=bearer(app, Role.REGISTRAR),
+        json={"reason": "Ownership evidence is incomplete"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["transfer"]["status"] == "REJECTED"
+    _, expected_status, event = (
+        transfer_repository.save_request_with_audit.call_args.args
+    )
+    assert expected_status is TransferStatus.SUBMITTED
+    assert event.event_type == "TRANSFER_REJECTED"
+    assert event.reason == "Ownership evidence is incomplete"
+
+
 def test_citizen_cannot_approve_transfer(app, client):
     pending = make_transfer(status=TransferStatus.UNDER_REVIEW)
     transfer_repository = Mock()
@@ -294,10 +431,15 @@ def test_approved_transfer_does_not_change_ownership(app, client):
     )
     transfer_repository = Mock()
     transfer_repository.find_by_id.side_effect = [pending, approved]
-    transfer_repository.save_request.return_value = approved
-    transfer_repository.record_audit_event.side_effect = lambda event: event
+    transfer_repository.save_request_with_audit.return_value = approved
+    parcel_repository = Mock()
+    parcel_repository.find_by_id.return_value = parcel_record()
+    ownership_repository = Mock()
+    ownership_repository.list_for_parcel.return_value = [ownership_record()]
+    user_repository = Mock()
+    user_repository.get_user_by_email.return_value = user_record()
     configure_repositories(
-        app, transfer_repository, Mock(), Mock(), Mock()
+        app, transfer_repository, parcel_repository, ownership_repository, user_repository
     )
 
     response = client.post(
@@ -309,6 +451,103 @@ def test_approved_transfer_does_not_change_ownership(app, client):
     assert body["status"] == "APPROVED"
     assert body["blockchain_status"] == "UNAVAILABLE"
     assert body["status"] != "COMPLETED"
+    ownership_repository.create_ownership.assert_not_called()
+
+
+def test_seller_can_cancel_approved_transfer_to_release_parcel(app, client):
+    approved = make_transfer(
+        status=TransferStatus.APPROVED,
+        buyer_reference="buyer-1",
+    )
+    cancelled = approved.__class__(
+        **{
+            **approved.__dict__,
+            "status": TransferStatus.CANCELLED,
+            "blockchain_status": BlockchainSubmissionStatus.UNAVAILABLE,
+        }
+    )
+    transfer_repository = Mock()
+    transfer_repository.find_by_id.return_value = approved
+    transfer_repository.save_request_with_audit.return_value = cancelled
+    configure_repositories(app, transfer_repository, Mock(), Mock(), Mock())
+
+    response = client.post(
+        "/api/transfers/request-1/cancel",
+        headers=bearer(app, Role.CITIZEN),
+        json={"reason": "Buyer withdrew"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["transfer"]["status"] == "CANCELLED"
+    event = transfer_repository.save_request_with_audit.call_args.args[2]
+    assert event.event_type == "TRANSFER_CANCELLED"
+    assert event.reason == "Buyer withdrew"
+
+
+def test_terminal_transfer_cannot_be_reopened(app, client):
+    rejected = make_transfer(status=TransferStatus.REJECTED)
+    transfer_repository = Mock()
+    transfer_repository.find_by_id.return_value = rejected
+    configure_repositories(app, transfer_repository, Mock(), Mock(), Mock())
+
+    response = client.post(
+        "/api/registrar/transfers/request-1/approve",
+        headers=bearer(app, Role.REGISTRAR),
+    )
+
+    assert response.status_code == 409
+    transfer_repository.save_request_with_audit.assert_not_called()
+
+
+def test_completion_is_not_an_allowed_transition_without_verified_blockchain():
+    service = TransferService(Mock(), Mock(), Mock(), Mock())
+
+    with pytest.raises(ResourceConflictError):
+        service._transition(
+            TransferStatus.BLOCKCHAIN_PENDING,
+            TransferStatus.COMPLETED,
+        )
+
+
+def test_buyer_can_read_transfer_submitted_with_email_reference(app, client):
+    transfer = make_transfer(buyer_reference="buyer@example.com")
+    transfer_repository = Mock()
+    transfer_repository.find_by_id.return_value = transfer
+    transfer_repository.list_audit_events.return_value = []
+    transfer_repository.list_for_seller.return_value = []
+    transfer_repository.list_for_buyer_reference.side_effect = (
+        lambda reference: [transfer]
+        if reference == "buyer@example.com"
+        else []
+    )
+    user_repository = Mock()
+    user_repository.get_user_by_id.return_value = user_record()
+    configure_repositories(app, transfer_repository, Mock(), Mock(), user_repository)
+
+    response = client.get(
+        "/api/transfers/request-1",
+        headers={
+            "Authorization": "Bearer "
+            + create_access_token(
+                "buyer-1", Role.CITIZEN, app.config["JWT_SECRET_KEY"]
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    listed = client.get(
+        "/api/transfers",
+        headers={
+            "Authorization": "Bearer "
+            + create_access_token(
+                "buyer-1", Role.CITIZEN, app.config["JWT_SECRET_KEY"]
+            )
+        },
+    )
+    assert listed.status_code == 200
+    transfer_repository.list_for_buyer_reference.assert_any_call(
+        "buyer@example.com"
+    )
 
 
 def test_repeated_approval_is_idempotent(app, client):
