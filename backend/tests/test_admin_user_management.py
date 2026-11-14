@@ -292,6 +292,26 @@ def test_admin_role_change_immediately_updates_old_token_authorization(app, clie
     assert denied_after.status_code == 503
 
 
+@pytest.mark.parametrize("role", [Role.CITIZEN, Role.REGISTRAR])
+def test_admin_cannot_promote_existing_user_to_admin(app, client, role):
+    user = make_user(app, role.value.lower() + "-promotion@example.com", role)
+
+    response = client.patch(
+        "/api/admin/users/" + user.id + "/role",
+        headers=admin_headers(app),
+        json={"role": "ADMIN"},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["error"]["code"] == "admin_promotion_not_allowed"
+    assert response.get_json()["error"]["message"] == (
+        "Admins cannot promote users to the ADMIN role."
+    )
+    with app.app_context():
+        unchanged_user = app.config["AUTH_USER_REPOSITORY"].get_user_by_id(user.id)
+    assert unchanged_user.role is role
+
+
 def test_admin_deactivation_immediately_blocks_old_token(app, client):
     user = make_user(app, "deactivate@example.com", Role.CITIZEN)
     old_headers = bearer(app, user.id, Role.CITIZEN)

@@ -11,7 +11,8 @@ import {
 import './AdminUsers.css'
 
 const ASSIGNABLE_ROLES = ['REGISTRAR', 'VERIFICATION_OFFICER']
-const ALL_ROLES = ['CITIZEN', ...ASSIGNABLE_ROLES, 'ADMIN']
+const FILTER_ROLES = ['CITIZEN', ...ASSIGNABLE_ROLES, 'ADMIN']
+const EDITABLE_ROLES = ['CITIZEN', ...ASSIGNABLE_ROLES]
 const EMPTY_FORM = {
   name: '',
   email: '',
@@ -251,7 +252,7 @@ export default function AdminUsers() {
               Role
               <select onChange={handleRoleFilterChange} value={roleFilter}>
                 <option value="">All roles</option>
-                {ALL_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
+                {FILTER_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
               </select>
             </label>
             <label>
@@ -311,7 +312,10 @@ export default function AdminUsers() {
                           }
                           value={selectedRole}
                         >
-                          {ALL_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
+                          {user.role === 'ADMIN' && (
+                            <option disabled value="ADMIN">ADMIN</option>
+                          )}
+                          {EDITABLE_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
                         </select>
                       </td>
                       <td data-label="Account status">

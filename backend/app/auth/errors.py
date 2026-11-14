@@ -27,6 +27,11 @@ class AuthorizationError(AuthError):
     status_code = 403
 
 
+class AdminPromotionNotAllowedError(AuthorizationError):
+    code = "admin_promotion_not_allowed"
+    message = "Admins cannot promote users to the ADMIN role."
+
+
 class MissingAuthenticationError(AuthError):
     code = "missing_authentication"
     message = "Authentication is required."
