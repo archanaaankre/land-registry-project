@@ -32,6 +32,12 @@ def app():
         TESTING=True,
         JWT_SECRET_KEY=secrets.token_urlsafe(32),
     )
+    repository = Mock()
+    repository.get_auth_state_by_id.side_effect = lambda user_id: (
+        True,
+        Role(user_id.rsplit("-", 1)[0].upper()),
+    )
+    application.config["AUTH_USER_REPOSITORY"] = repository
 
     @application.get("/api/test-parcel-management")
     @roles_required(*PARCEL_MANAGE_ROLES)
@@ -196,6 +202,29 @@ def test_registrar_can_record_ownership_for_existing_parcel(app, client):
             },
         ),
         (
+            Role.VERIFICATION_OFFICER,
+            "/api/parcels",
+            {
+                "parcel_id": "parcel-1",
+                "cadastral_number": "CAD-1",
+                "location": "Ward 1",
+                "area": 10,
+                "area_unit": "HECTARES",
+                "status": "ACTIVE",
+            },
+        ),
+        (
+            Role.VERIFICATION_OFFICER,
+            "/api/ownership",
+            {
+                "ownership_id": "ownership-1",
+                "parcel_id": "parcel-1",
+                "owner_id": "citizen-1",
+                "share": 100,
+                "status": "ACTIVE",
+            },
+        ),
+        (
             Role.ADMIN,
             "/api/parcels",
             {
@@ -277,8 +306,9 @@ def test_ownership_record_policy_allows_only_registrar():
 
 
 def test_read_role_policy_supports_citizen_registrar_and_admin():
-    assert set(PARCEL_READ_ROLES) == set(Role)
-    assert set(OWNERSHIP_READ_ROLES) == set(Role)
+    existing_read_roles = {Role.CITIZEN, Role.REGISTRAR, Role.ADMIN}
+    assert set(PARCEL_READ_ROLES) == existing_read_roles
+    assert set(OWNERSHIP_READ_ROLES) == existing_read_roles
     assert PARCEL_MANAGE_ROLES == (Role.REGISTRAR,)
 
 

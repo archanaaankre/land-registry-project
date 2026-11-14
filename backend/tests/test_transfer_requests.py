@@ -37,6 +37,12 @@ def bearer(app, role):
 def app():
     application = create_app()
     application.config.update(TESTING=True, JWT_SECRET_KEY=secrets.token_urlsafe(32))
+    repository = Mock()
+    repository.get_auth_state_by_id.side_effect = lambda user_id: (
+        True,
+        Role(user_id.rsplit("-", 1)[0].upper()),
+    )
+    application.config["AUTH_USER_REPOSITORY"] = repository
     return application
 
 
@@ -101,6 +107,10 @@ def make_transfer(
 
 
 def configure_repositories(app, transfer_repository, parcel_repository, ownership_repository, user_repository):
+    user_repository.get_auth_state_by_id.side_effect = lambda user_id: (
+        True,
+        Role(user_id.rsplit("-", 1)[0].upper()),
+    )
     app.config["TRANSFER_REPOSITORY"] = transfer_repository
     app.config["PARCEL_REPOSITORY"] = parcel_repository
     app.config["OWNERSHIP_REPOSITORY"] = ownership_repository
@@ -271,6 +281,39 @@ def test_citizen_cannot_approve_transfer(app, client):
     assert response.status_code == 403
 
 
+@pytest.mark.parametrize(
+    "role", [Role.VERIFICATION_OFFICER, Role.ADMIN]
+)
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("GET", "/api/registrar/transfers", None),
+        (
+            "POST",
+            "/api/registrar/transfers/request-1/approve",
+            {"reason": "Review approved"},
+        ),
+        (
+            "POST",
+            "/api/registrar/transfers/request-1/reject",
+            {"reason": "Review rejected"},
+        ),
+    ],
+)
+def test_non_registrar_cannot_access_registrar_review_endpoints(
+    app, client, role, method, path, payload
+):
+    response = client.open(
+        path,
+        method=method,
+        headers=bearer(app, role),
+        json=payload,
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["error"]["code"] == "forbidden"
+
+
 def test_registrar_cannot_approve_cancelled_transfer(app, client):
     cancelled = make_transfer(status=TransferStatus.CANCELLED)
     transfer_repository = Mock()
@@ -329,5 +372,9 @@ def test_repeated_approval_is_idempotent(app, client):
 
 def test_transfer_read_roles_are_supported():
     assert set(TRANSFER_SUBMIT_ROLES) == {Role.CITIZEN}
-    assert set(TRANSFER_READ_ROLES) == set(Role)
+    assert set(TRANSFER_READ_ROLES) == {
+        Role.CITIZEN,
+        Role.REGISTRAR,
+        Role.ADMIN,
+    }
     assert set(TRANSFER_REVIEW_ROLES) == {Role.REGISTRAR}
