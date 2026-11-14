@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from flask import Flask, request
@@ -11,14 +12,18 @@ migrate = Migrate()
 _LOCAL_VITE_ORIGINS = {"http://localhost:5173", "http://127.0.0.1:5173"}
 
 
-def create_app():
+def create_app(test_config=None):
     env_path = Path(__file__).resolve().parent.parent / ".env"
     load_dotenv(env_path, override=False)
 
     app = Flask(__name__)
 
-    from app.config import Config
+    from app.config import Config, validate_jwt_secret
     app.config.from_object(Config)
+    app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
+    if test_config is not None:
+        app.config.update(test_config)
+    validate_jwt_secret(app.config.get("JWT_SECRET_KEY"))
 
     db.init_app(app)
     migrate.init_app(app, db)
