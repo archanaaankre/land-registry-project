@@ -8,6 +8,8 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    func,
+    literal_column,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -22,6 +24,17 @@ from app.models import (
     TransferStatus,
     utc_now,
 )
+
+_CADASTRAL_EDGE_WHITESPACE = literal_column("' \t\n\r\v\f'")
+
+
+def normalized_cadastral_number_expression(column):
+    return func.upper(
+        func.ltrim(
+            func.rtrim(column, _CADASTRAL_EDGE_WHITESPACE),
+            _CADASTRAL_EDGE_WHITESPACE,
+        )
+    )
 
 
 class UserModel(db.Model):
@@ -65,6 +78,11 @@ class ParcelModel(db.Model):
     updated_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
     __table_args__ = (
+        Index(
+            "uq_parcels_cadastral_number_ascii_whitespace",
+            normalized_cadastral_number_expression(cadastral_number),
+            unique=True,
+        ),
         CheckConstraint(
             "area_unit IN ('SQ_METERS','HECTARES','ACRES')",
             name="parcels_area_unit",
@@ -102,6 +120,14 @@ class OwnershipModel(db.Model):
     updated_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
     __table_args__ = (
+        Index(
+            "uq_ownerships_one_active_owner_per_parcel",
+            "parcel_id",
+            "owner_id",
+            unique=True,
+            postgresql_where=text("status = 'ACTIVE'"),
+            sqlite_where=text("status = 'ACTIVE'"),
+        ),
         CheckConstraint(
             "share > 0 AND share <= 100",
             name="ownerships_share",
@@ -133,6 +159,9 @@ class TransferRequestModel(db.Model):
     parcel_id: Mapped[str] = mapped_column(String(64), ForeignKey("parcels.parcel_id"), nullable=False, index=True)
     seller_id: Mapped[str] = mapped_column(String(128), ForeignKey("users.id"), nullable=False, index=True)
     buyer_reference: Mapped[str] = mapped_column(String(254), nullable=False)
+    # Canonical buyer identity; nullable only for legacy rows that predate
+    # this column (see the migration proposal for Person 1).
+    buyer_id: Mapped[str | None] = mapped_column(String(128), ForeignKey("users.id"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     reviewer_id: Mapped[str | None] = mapped_column(String(128), ForeignKey("users.id"), nullable=True)
     review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -165,6 +194,7 @@ class TransferRequestModel(db.Model):
             parcel_id=self.parcel_id,
             seller_id=self.seller_id,
             buyer_reference=self.buyer_reference,
+            buyer_id=self.buyer_id,
             status=TransferStatus(self.status),
             created_at=self.created_at,
             updated_at=self.updated_at,

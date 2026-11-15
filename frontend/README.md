@@ -36,6 +36,10 @@ All paths below are relative to `VITE_API_BASE_URL`. Authenticated service calls
 | `POST /auth/login` | `{ email, password }` | Same token and user fields as registration. |
 | `GET /auth/me` | None | Response contains `user` with a string `id` and supported `role`. |
 | `GET /parcels` | None | Response contains an `items` array. |
+| `GET /parcels?search=...&cadastral_number=...&location=...&status=...` | None | Optional case-insensitive substring filters for cadastral number/location (or `search` across both) and an exact `ACTIVE`, `INACTIVE`, or `DISPUTED` status filter. |
+| `GET /parcels?page=1&page_size=50` | None | Optional pagination; response contains `items` and `pagination` (`page`, `page_size`, `total`, `pages`). `page_size` is limited to 100. Without pagination parameters, the existing full-list response remains unchanged. |
+| `PATCH /parcels/{parcelId}` | Any subset of `{ cadastral_number, location, area, area_unit }` | Registrar only. Returns the updated `parcel`; status and ownership fields cannot be changed through this endpoint. |
+| `PATCH /parcels/{parcelId}/status` | `{ status: "ACTIVE" \| "INACTIVE" \| "DISPUTED" }` | Registrar only. Returns the updated `parcel`; a request must change the current status. |
 | `GET /parcels/{parcelId}` | None | Response contains `parcel` with string `parcel_id`. |
 | `GET /parcels/{parcelId}/ownership` | None | Response contains an `items` array. |
 | `GET /transfers` | None | Response contains an `items` array. |
@@ -45,6 +49,8 @@ All paths below are relative to `VITE_API_BASE_URL`. Authenticated service calls
 | `GET /registrar/transfers` | None | Response contains an `items` array. The review page reads `request_id`, `status`, `parcel_id`, `seller_id`, `buyer_reference`, and `created_at` from each item. |
 | `POST /registrar/transfers/{requestId}/approve` | No body in the current page flow | Response contains a matching `transfer` with `request_id` and `status`. |
 | `POST /registrar/transfers/{requestId}/reject` | `{ reason }` | Response contains a matching `transfer` with `request_id` and `status`. |
+
+Cadastral numbers trim ASCII space, tab, LF, CR, vertical tab, and form-feed characters at both ends, then store uppercase. The database unique index applies the same normalization and rejects normalized duplicates. Migrations check existing records first and stop for manual resolution if duplicates are present; they do not alter parcel data. Status changes currently allow any transition between distinct defined statuses.
 
 The evaluation dashboard’s ownership traceability reads the parcel list and each parcel’s ownership endpoint above. Its optional API latency sample makes five sequential authenticated `GET /auth/me` requests and five sequential authenticated `GET /parcels` requests. These are browser API response-time samples only—not transfer-processing or blockchain-confirmation measurements.
 

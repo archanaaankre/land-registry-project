@@ -12,6 +12,11 @@ import {
 import PageHeader from '../components/layout/PageHeader.jsx'
 
 const CANCELLABLE_STATUSES = new Set(['SUBMITTED', 'UNDER_REVIEW', 'DRAFT'])
+const CANCELLABLE_APPROVAL_BLOCKCHAIN_STATUSES = new Set([
+  null,
+  'NOT_SUBMITTED',
+  'UNAVAILABLE',
+])
 
 function describeTransferStatus(transfer) {
   switch (transfer.status) {
@@ -174,7 +179,11 @@ export default function TransferRequestDetails() {
   const transfer = details?.transfer
   const history = details?.history ?? []
   const canCancel =
-    transfer && user?.id === transfer.seller_id && CANCELLABLE_STATUSES.has(transfer.status)
+    transfer &&
+    user?.id === transfer.seller_id &&
+    (CANCELLABLE_STATUSES.has(transfer.status) ||
+      (transfer.status === 'APPROVED' &&
+        CANCELLABLE_APPROVAL_BLOCKCHAIN_STATUSES.has(transfer.blockchain_status)))
   const canReview =
     user?.role === 'REGISTRAR' &&
     ['SUBMITTED', 'UNDER_REVIEW'].includes(transfer?.status)

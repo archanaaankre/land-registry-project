@@ -7,7 +7,7 @@ import pytest
 
 from app import create_app, db
 from app.auth.errors import InvalidInputError, ResourceConflictError
-from app.auth.service import hash_password
+from app.auth.service import create_access_token, hash_password
 from app.models import (
     AreaUnit,
     Ownership,
@@ -202,14 +202,243 @@ def test_registrar_creates_parcels_and_ownership_through_api(tmp_path):
         "/api/ownership", json=ownership_payload, headers=headers
     )
     assert duplicate_parcel.status_code == 400
-    assert duplicate_ownership.status_code == 400
+    assert duplicate_ownership.status_code == 409
     assert _json(duplicate_parcel)["error"]["code"] == "invalid_input"
-    assert _json(duplicate_ownership)["error"]["code"] == "invalid_input"
+    assert _json(duplicate_ownership)["error"]["code"] == "conflict"
+
+    inactive_payload = {
+        "ownership_id": "ownership-api-history",
+        "parcel_id": "parcel-api-created",
+        "owner_id": owner_id,
+        "share": 100,
+        "status": "INACTIVE",
+    }
+    created_inactive = client.post(
+        "/api/ownership", json=inactive_payload, headers=headers
+    )
+    assert created_inactive.status_code == 201
+
+    current = client.get(
+        "/api/parcels/parcel-api-created/ownership/current", headers=headers
+    )
+    history = client.get(
+        "/api/parcels/parcel-api-created/ownership/history", headers=headers
+    )
+    assert [item["ownership_id"] for item in _json(current)["items"]] == [
+        "ownership-api-created"
+    ]
+    assert [item["ownership_id"] for item in _json(history)["items"]] == [
+        "ownership-api-history"
+    ]
+
+
+def test_ownership_share_constraints_are_atomic_and_parcel_scoped(tmp_path):
+    database_url = _database_url(tmp_path)
+    app, user_repository, parcel_repository, ownership_repository, _ = _prepare_app(
+        database_url
+    )
+    client = app.test_client()
+    owner_tokens = []
+    with app.app_context():
+        for index in range(3):
+            user = user_repository.create_user(
+                name=f"Owner {index}",
+                email=f"owner-{index}@example.com",
+                password_hash=hash_password("owner password"),
+                role=Role.CITIZEN,
+            )
+            owner_tokens.append(user.id)
+        for index in range(3):
+            parcel_repository.create_parcel(
+                Parcel(
+                    parcel_id=f"ownership-parcel-{index}",
+                    cadastral_number=f"OWN-CAD-{index}",
+                    location="Ward ownership",
+                    area=Decimal("10"),
+                    area_unit=AreaUnit.HECTARES,
+                    status=ParcelStatus.ACTIVE,
+                    created_at=utc_now(),
+                    updated_at=utc_now(),
+                )
+            )
+
+        registrar = user_repository.create_user(
+            name="Ownership Registrar",
+            email="ownership-registrar@example.com",
+            password_hash=hash_password("registrar password"),
+            role=Role.REGISTRAR,
+        )
+    headers = {
+        "Authorization": "Bearer "
+        + create_access_token(
+            registrar.id, Role.REGISTRAR, app.config["JWT_SECRET_KEY"]
+        )
+    }
+
+    def create_record(ownership_id, parcel_id, owner_id, share):
+        return client.post(
+            "/api/ownership",
+            headers=headers,
+            json={
+                "ownership_id": ownership_id,
+                "parcel_id": parcel_id,
+                "owner_id": owner_id,
+                "share": share,
+                "status": "ACTIVE",
+            },
+        )
+
+    assert create_record(
+        "ownership-share-1", "ownership-parcel-0", owner_tokens[0], 33.333333
+    ).status_code == 201
+    assert create_record(
+        "ownership-share-2", "ownership-parcel-0", owner_tokens[1], 66.666667
+    ).status_code == 201
+
+    overallocated = create_record(
+        "ownership-share-3", "ownership-parcel-0", owner_tokens[2], 0.000001
+    )
+    separate_parcel = create_record(
+        "ownership-share-4", "ownership-parcel-1", owner_tokens[0], 100
+    )
+    invalid_owner = create_record(
+        "ownership-share-5",
+        "ownership-parcel-2",
+        "missing-citizen",
+        0.000001,
+    )
+    assert overallocated.status_code == 409
+    assert separate_parcel.status_code == 201
+    assert invalid_owner.status_code == 404
+
+    with app.app_context():
+        assert [
+            record.ownership_id
+            for record in ownership_repository.list_for_parcel("ownership-parcel-0")
+        ] == ["ownership-share-1", "ownership-share-2"]
+
+
+def test_ownership_repository_rejects_non_citizen_owner_and_rolls_back(tmp_path):
+    database_url = _database_url(tmp_path)
+    app, user_repository, parcel_repository, ownership_repository, _ = _prepare_app(
+        database_url
+    )
+    with app.app_context():
+        registrar = user_repository.create_user(
+            name="Not an Owner",
+            email="not-owner@example.com",
+            password_hash=hash_password("registrar password"),
+            role=Role.REGISTRAR,
+        )
+        parcel_repository.create_parcel(
+            Parcel(
+                parcel_id="ownership-role-parcel",
+                cadastral_number="OWN-ROLE-CAD",
+                location="Ward ownership",
+                area=Decimal("10"),
+                area_unit=AreaUnit.HECTARES,
+                status=ParcelStatus.ACTIVE,
+                created_at=utc_now(),
+                updated_at=utc_now(),
+            )
+        )
+
+        with pytest.raises(InvalidInputError, match="citizen"):
+            ownership_repository.create_ownership(
+                Ownership(
+                    ownership_id="ownership-invalid-role",
+                    parcel_id="ownership-role-parcel",
+                    owner_id=registrar.id,
+                    share=Decimal("100"),
+                    status=OwnershipStatus.ACTIVE,
+                    created_at=utc_now(),
+                    updated_at=utc_now(),
+                )
+            )
+        assert ownership_repository.list_for_parcel("ownership-role-parcel") == []
+
+
+def test_ownership_repository_rechecks_shares_and_rolls_back(tmp_path):
+    database_url = _database_url(tmp_path)
+    app, user_repository, parcel_repository, ownership_repository, _ = _prepare_app(
+        database_url
+    )
+    with app.app_context():
+        owners = [
+            user_repository.create_user(
+                name=f"Owner {index}",
+                email=f"atomic-owner-{index}@example.com",
+                password_hash=hash_password("owner password"),
+                role=Role.CITIZEN,
+            )
+            for index in range(2)
+        ]
+        parcel_repository.create_parcel(
+            Parcel(
+                parcel_id="ownership-atomic-parcel",
+                cadastral_number="OWN-ATOMIC-CAD",
+                location="Ward ownership",
+                area=Decimal("10"),
+                area_unit=AreaUnit.HECTARES,
+                status=ParcelStatus.ACTIVE,
+                created_at=utc_now(),
+                updated_at=utc_now(),
+            )
+        )
+        ownership_repository.create_ownership(
+            Ownership(
+                ownership_id="ownership-atomic-existing",
+                parcel_id="ownership-atomic-parcel",
+                owner_id=owners[0].id,
+                share=Decimal("70"),
+                status=OwnershipStatus.ACTIVE,
+                created_at=utc_now(),
+                updated_at=utc_now(),
+            )
+        )
+
+        with pytest.raises(ResourceConflictError, match="cannot exceed 100%"):
+            ownership_repository.create_ownership(
+                Ownership(
+                    ownership_id="ownership-atomic-overflow",
+                    parcel_id="ownership-atomic-parcel",
+                    owner_id=owners[1].id,
+                    share=Decimal("31"),
+                    status=OwnershipStatus.ACTIVE,
+                    created_at=utc_now(),
+                    updated_at=utc_now(),
+                )
+            )
+        with pytest.raises(ResourceConflictError, match="already has an active"):
+            ownership_repository.create_ownership(
+                Ownership(
+                    ownership_id="ownership-atomic-duplicate",
+                    parcel_id="ownership-atomic-parcel",
+                    owner_id=owners[0].id,
+                    share=Decimal("20"),
+                    status=OwnershipStatus.ACTIVE,
+                    created_at=utc_now(),
+                    updated_at=utc_now(),
+                )
+            )
+
+        records = ownership_repository.list_for_parcel(
+            "ownership-atomic-parcel"
+        )
+        assert [(record.ownership_id, record.share) for record in records] == [
+            ("ownership-atomic-existing", Decimal("70.000000"))
+        ]
 
 
 def test_transfer_workflow_persists_to_database(tmp_path):
     database_url = _database_url(tmp_path)
-    app, user_repository, parcel_repository, ownership_repository, _ = _prepare_app(database_url)
+    (
+        app,
+        user_repository,
+        parcel_repository,
+        ownership_repository,
+        transfer_repository,
+    ) = _prepare_app(database_url)
     client = app.test_client()
 
     seller_registration = client.post(
@@ -223,6 +452,7 @@ def test_transfer_workflow_persists_to_database(tmp_path):
         json=_registration_payload("buyer@example.com", "Buyer Rao"),
     )
     buyer_email = _json(buyer_registration)["user"]["email"]
+    buyer_id = _json(buyer_registration)["user"]["id"]
 
     with app.app_context():
         parcel_repository.create_parcel(
@@ -292,16 +522,298 @@ def test_transfer_workflow_persists_to_database(tmp_path):
     assert "TRANSFER_SUBMITTED" in event_types
     assert "TRANSFER_APPROVED" in event_types
 
+    cancelled = client.post(
+        "/api/transfers/{0}/cancel".format(created_body["request_id"]),
+        json={"reason": "Buyer withdrew"},
+        headers={"Authorization": "Bearer " + seller_token},
+    )
+    assert cancelled.status_code == 200
+    assert _json(cancelled)["transfer"]["status"] == "CANCELLED"
+    with app.app_context():
+        transfer_events = transfer_repository.list_audit_events(
+            created_body["request_id"]
+        )
+        current_ownership = ownership_repository.list_for_parcel("parcel-transfer")
+    assert [event.event_type for event in transfer_events][-1] == "TRANSFER_CANCELLED"
+    assert len(current_ownership) == 1
+    assert current_ownership[0].owner_id == seller_id
+
+    resubmitted = client.post(
+        "/api/transfers",
+        json={"parcel_id": "parcel-transfer", "buyer_reference": buyer_id},
+        headers={"Authorization": "Bearer " + seller_token},
+    )
+    assert resubmitted.status_code == 201
+    assert _json(resubmitted)["transfer"]["buyer_reference"] == buyer_id
+    buyer_transfers = client.get(
+        "/api/transfers",
+        headers={
+            "Authorization": "Bearer "
+            + create_access_token(
+                buyer_id, Role.CITIZEN, app.config["JWT_SECRET_KEY"]
+            )
+        },
+    )
+    assert buyer_transfers.status_code == 200
+    assert {
+        transfer["request_id"] for transfer in _json(buyer_transfers)["items"]
+    } == {
+        created_body["request_id"],
+        _json(resubmitted)["transfer"]["request_id"],
+    }
+
+    with app.app_context():
+        current_ownership = ownership_repository.list_for_parcel("parcel-transfer")
+    assert len(current_ownership) == 1
+    assert current_ownership[0].owner_id == seller_id
+    assert current_ownership[0].share == Decimal("100.000000")
+
+
+def test_transfer_submission_revalidates_parcel_owner_and_buyer_in_database(tmp_path):
+    database_url = _database_url(tmp_path)
+    app, user_repository, parcel_repository, ownership_repository, transfer_repository = (
+        _prepare_app(database_url)
+    )
+    client = app.test_client()
+    with app.app_context():
+        seller = user_repository.create_user(
+            name="Seller",
+            email="state-seller@example.com",
+            password_hash=hash_password("seller password"),
+            role=Role.CITIZEN,
+        )
+        coowner = user_repository.create_user(
+            name="Co-owner",
+            email="state-coowner@example.com",
+            password_hash=hash_password("coowner password"),
+            role=Role.CITIZEN,
+        )
+        buyer = user_repository.create_user(
+            name="Buyer",
+            email="state-buyer@example.com",
+            password_hash=hash_password("buyer password"),
+            role=Role.CITIZEN,
+        )
+        registrar_buyer = user_repository.create_user(
+            name="Registrar",
+            email="state-registrar@example.com",
+            password_hash=hash_password("registrar password"),
+            role=Role.REGISTRAR,
+        )
+        for parcel_id, status in (
+            ("parcel-disputed-transfer", ParcelStatus.DISPUTED),
+            ("parcel-shared-transfer", ParcelStatus.ACTIVE),
+            ("parcel-role-transfer", ParcelStatus.ACTIVE),
+        ):
+            parcel_repository.create_parcel(
+                Parcel(
+                    parcel_id=parcel_id,
+                    cadastral_number=f"CAD-{parcel_id}",
+                    location="Ward transfer",
+                    area=Decimal("10"),
+                    area_unit=AreaUnit.HECTARES,
+                    status=status,
+                    created_at=utc_now(),
+                    updated_at=utc_now(),
+                )
+            )
+        ownership_repository.create_ownership(
+            Ownership(
+                ownership_id="ownership-disputed-transfer",
+                parcel_id="parcel-disputed-transfer",
+                owner_id=seller.id,
+                share=Decimal("100"),
+                status=OwnershipStatus.ACTIVE,
+                created_at=utc_now(),
+                updated_at=utc_now(),
+            )
+        )
+        for ownership_id, owner_id in (
+            ("ownership-shared-seller", seller.id),
+            ("ownership-shared-coowner", coowner.id),
+        ):
+            ownership_repository.create_ownership(
+                Ownership(
+                    ownership_id=ownership_id,
+                    parcel_id="parcel-shared-transfer",
+                    owner_id=owner_id,
+                    share=Decimal("50"),
+                    status=OwnershipStatus.ACTIVE,
+                    created_at=utc_now(),
+                    updated_at=utc_now(),
+                )
+            )
+        ownership_repository.create_ownership(
+            Ownership(
+                ownership_id="ownership-role-transfer",
+                parcel_id="parcel-role-transfer",
+                owner_id=seller.id,
+                share=Decimal("100"),
+                status=OwnershipStatus.ACTIVE,
+                created_at=utc_now(),
+                updated_at=utc_now(),
+            )
+        )
+
+    seller_headers = {
+        "Authorization": "Bearer "
+        + create_access_token(seller.id, Role.CITIZEN, app.config["JWT_SECRET_KEY"])
+    }
+
+    def submit(parcel_id, buyer_reference):
+        return client.post(
+            "/api/transfers",
+            json={
+                "parcel_id": parcel_id,
+                "buyer_reference": buyer_reference,
+            },
+            headers=seller_headers,
+        )
+
+    assert submit("parcel-disputed-transfer", buyer.email).status_code == 409
+    assert submit("parcel-shared-transfer", buyer.email).status_code == 409
+    non_citizen_buyer = submit("parcel-role-transfer", registrar_buyer.id)
+    assert non_citizen_buyer.status_code == 400
+    assert _json(non_citizen_buyer)["error"]["field"] == "buyer_reference"
+
+    with app.app_context():
+        assert transfer_repository.list_all() == []
+        assert all(
+            transfer_repository.list_audit_events(request_id) == []
+            for request_id in (
+                "transfer-disputed-transfer",
+                "transfer-shared-transfer",
+                "transfer-role-transfer",
+            )
+        )
+
+
+def test_transfer_status_and_audit_update_roll_back_together_on_failure(tmp_path):
+    database_url = _database_url(tmp_path)
+    app, user_repository, parcel_repository, ownership_repository, transfer_repository = (
+        _prepare_app(database_url)
+    )
+    now = utc_now()
+    with app.app_context():
+        seller = user_repository.create_user(
+            name="Seller",
+            email="rollback-seller@example.com",
+            password_hash=hash_password("seller password"),
+            role=Role.CITIZEN,
+        )
+        buyer = user_repository.create_user(
+            name="Buyer",
+            email="rollback-buyer@example.com",
+            password_hash=hash_password("buyer password"),
+            role=Role.CITIZEN,
+        )
+        registrar = user_repository.create_user(
+            name="Registrar",
+            email="rollback-registrar@example.com",
+            password_hash=hash_password("registrar password"),
+            role=Role.REGISTRAR,
+        )
+        parcel_repository.create_parcel(
+            Parcel(
+                parcel_id="parcel-decision-rollback",
+                cadastral_number="CAD-DECISION-ROLLBACK",
+                location="Ward transfer",
+                area=Decimal("10"),
+                area_unit=AreaUnit.HECTARES,
+                status=ParcelStatus.ACTIVE,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        ownership_repository.create_ownership(
+            Ownership(
+                ownership_id="ownership-decision-rollback",
+                parcel_id="parcel-decision-rollback",
+                owner_id=seller.id,
+                share=Decimal("100"),
+                status=OwnershipStatus.ACTIVE,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        transfer = TransferRequest(
+            request_id="transfer-decision-rollback",
+            parcel_id="parcel-decision-rollback",
+            seller_id=seller.id,
+            buyer_reference=buyer.email,
+            status=TransferStatus.SUBMITTED,
+            created_at=now,
+            updated_at=now,
+        )
+        duplicate_event = TransferAuditEvent(
+            event_id="event-decision-rollback",
+            request_id=transfer.request_id,
+            event_type="TRANSFER_SUBMITTED",
+            actor_id=seller.id,
+            actor_role=Role.CITIZEN,
+            from_status=None,
+            to_status=TransferStatus.SUBMITTED,
+            reason=None,
+            created_at=now,
+        )
+        transfer_repository.create_request_with_audit(transfer, duplicate_event)
+
+        rejected = transfer.__class__(
+            **{
+                **transfer.__dict__,
+                "status": TransferStatus.REJECTED,
+                "reviewer_id": registrar.id,
+                "reviewed_at": now,
+                "review_reason": "Rejected",
+                "updated_at": now,
+            }
+        )
+        conflicting_event = TransferAuditEvent(
+            event_id=duplicate_event.event_id,
+            request_id=transfer.request_id,
+            event_type="TRANSFER_REJECTED",
+            actor_id=registrar.id,
+            actor_role=Role.REGISTRAR,
+            from_status=TransferStatus.SUBMITTED,
+            to_status=TransferStatus.REJECTED,
+            reason="Rejected",
+            created_at=now,
+        )
+        with pytest.raises(InvalidInputError):
+            transfer_repository.save_request_with_audit(
+                rejected,
+                TransferStatus.SUBMITTED,
+                conflicting_event,
+            )
+
+        stored = transfer_repository.find_by_id(transfer.request_id)
+        events = transfer_repository.list_audit_events(transfer.request_id)
+        assert stored.status is TransferStatus.SUBMITTED
+        assert stored.reviewer_id is None
+        assert [event.event_id for event in events] == [duplicate_event.event_id]
+
 
 def test_active_transfer_constraint_handles_duplicate_requests_atomically(tmp_path):
     database_url = _database_url(tmp_path)
-    app, user_repository, parcel_repository, _, transfer_repository = _prepare_app(database_url)
+    (
+        app,
+        user_repository,
+        parcel_repository,
+        ownership_repository,
+        transfer_repository,
+    ) = _prepare_app(database_url)
     now = utc_now()
     with app.app_context():
         seller = user_repository.create_user(
             name="Seller",
             email="seller-constraint@example.com",
             password_hash=hash_password("seller password"),
+            role=Role.CITIZEN,
+        )
+        buyer = user_repository.create_user(
+            name="Buyer",
+            email="buyer-one@example.com",
+            password_hash=hash_password("buyer password"),
             role=Role.CITIZEN,
         )
         parcel_repository.create_parcel(
@@ -316,12 +828,23 @@ def test_active_transfer_constraint_handles_duplicate_requests_atomically(tmp_pa
                 updated_at=now,
             )
         )
+        ownership_repository.create_ownership(
+            Ownership(
+                ownership_id="ownership-constraint",
+                parcel_id="parcel-constraint",
+                owner_id=seller.id,
+                share=Decimal("100"),
+                status=OwnershipStatus.ACTIVE,
+                created_at=now,
+                updated_at=now,
+            )
+        )
 
         first = TransferRequest(
             request_id="transfer-constraint-1",
             parcel_id="parcel-constraint",
             seller_id=seller.id,
-            buyer_reference="buyer-one@example.com",
+            buyer_reference=buyer.email,
             status=TransferStatus.SUBMITTED,
             created_at=now,
             updated_at=now,
@@ -343,7 +866,7 @@ def test_active_transfer_constraint_handles_duplicate_requests_atomically(tmp_pa
             request_id="transfer-constraint-2",
             parcel_id="parcel-constraint",
             seller_id=seller.id,
-            buyer_reference="buyer-two@example.com",
+            buyer_reference=buyer.email,
             status=TransferStatus.SUBMITTED,
             created_at=now,
             updated_at=now,
@@ -369,13 +892,25 @@ def test_active_transfer_constraint_handles_duplicate_requests_atomically(tmp_pa
 
 def test_transfer_request_is_rolled_back_when_audit_event_cannot_be_saved(tmp_path):
     database_url = _database_url(tmp_path)
-    app, user_repository, parcel_repository, _, transfer_repository = _prepare_app(database_url)
+    (
+        app,
+        user_repository,
+        parcel_repository,
+        ownership_repository,
+        transfer_repository,
+    ) = _prepare_app(database_url)
     now = utc_now()
     with app.app_context():
         seller = user_repository.create_user(
             name="Seller",
             email="seller-rollback@example.com",
             password_hash=hash_password("seller password"),
+            role=Role.CITIZEN,
+        )
+        buyer = user_repository.create_user(
+            name="Buyer",
+            email="buyer-one@example.com",
+            password_hash=hash_password("buyer password"),
             role=Role.CITIZEN,
         )
         parcel_repository.create_parcel(
@@ -390,11 +925,22 @@ def test_transfer_request_is_rolled_back_when_audit_event_cannot_be_saved(tmp_pa
                 updated_at=now,
             )
         )
+        ownership_repository.create_ownership(
+            Ownership(
+                ownership_id="ownership-rollback",
+                parcel_id="parcel-rollback",
+                owner_id=seller.id,
+                share=Decimal("100"),
+                status=OwnershipStatus.ACTIVE,
+                created_at=now,
+                updated_at=now,
+            )
+        )
         original_request = TransferRequest(
             request_id="transfer-rollback-1",
             parcel_id="parcel-rollback",
             seller_id=seller.id,
-            buyer_reference="buyer-one@example.com",
+            buyer_reference=buyer.email,
             status=TransferStatus.SUBMITTED,
             created_at=now,
             updated_at=now,
@@ -416,7 +962,7 @@ def test_transfer_request_is_rolled_back_when_audit_event_cannot_be_saved(tmp_pa
             request_id="transfer-rollback-2",
             parcel_id="parcel-rollback",
             seller_id=seller.id,
-            buyer_reference="buyer-two@example.com",
+            buyer_reference=buyer.email,
             status=TransferStatus.REJECTED,
             created_at=now,
             updated_at=now,

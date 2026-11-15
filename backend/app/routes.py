@@ -11,6 +11,7 @@ from app.registry.authorization import (
     PARCEL_READ_ROLES,
 )
 from app.registry.services import OwnershipService, ParcelService
+from app.registry.validation import validate_parcel_search_data
 from app.persistence.repositories import repository_bootstrap
 from app.transfers.authorization import (
     TRANSFER_READ_ROLES,
@@ -18,7 +19,10 @@ from app.transfers.authorization import (
     TRANSFER_SUBMIT_ROLES,
 )
 from app.transfers.services import TransferService
-from app.transfers.validation import validate_request_id, validate_review_decision
+from app.transfers.validation import (
+    validate_request_id,
+    validate_review_decision,
+)
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
@@ -61,6 +65,7 @@ def _transfer_service():
         current_app.config.get("PARCEL_REPOSITORY"),
         current_app.config.get("OWNERSHIP_REPOSITORY"),
         current_app.config.get("AUTH_USER_REPOSITORY"),
+        blockchain_gateway=current_app.config.get("BLOCKCHAIN_GATEWAY"),
     )
 
 
@@ -121,8 +126,23 @@ def current_user():
 @bp.route("/parcels", methods=["GET"])
 @roles_required(*PARCEL_READ_ROLES)
 def list_parcels():
-    parcels = _parcel_service().list_parcels()
-    return jsonify({"items": [_parcel_response(parcel) for parcel in parcels]})
+    filters, pagination_requested = validate_parcel_search_data(request.args)
+    if not filters:
+        parcels = _parcel_service().list_parcels()
+        return jsonify({"items": [_parcel_response(parcel) for parcel in parcels]})
+
+    parcels, total = _parcel_service().search_parcels(**filters)
+    response = {"items": [_parcel_response(parcel) for parcel in parcels]}
+    if pagination_requested:
+        page = filters["page"]
+        page_size = filters["page_size"]
+        response["pagination"] = {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": (total + page_size - 1) // page_size,
+        }
+    return jsonify(response)
 
 
 @bp.route("/parcels", methods=["POST"])
@@ -130,6 +150,23 @@ def list_parcels():
 def create_parcel():
     parcel = _parcel_service().create_parcel(_json_body())
     return jsonify({"parcel": _parcel_response(parcel)}), 201
+
+
+@bp.route("/parcels/<parcel_id>", methods=["PATCH"])
+@roles_required(*PARCEL_MANAGE_ROLES)
+def update_parcel(parcel_id):
+    parcel = _parcel_service().update_parcel(parcel_id, _json_body())
+    return jsonify({"parcel": _parcel_response(parcel)})
+
+
+@bp.route("/parcels/<parcel_id>/status", methods=["PATCH"])
+@roles_required(*PARCEL_MANAGE_ROLES)
+def update_parcel_status(parcel_id):
+    body = _json_body()
+    if not isinstance(body, dict) or set(body) != {"status"}:
+        raise InvalidInputError("Request body must contain only status.")
+    parcel = _parcel_service().update_status(parcel_id, body["status"])
+    return jsonify({"parcel": _parcel_response(parcel)})
 
 
 @bp.route("/parcels/<parcel_id>", methods=["GET"])
@@ -146,6 +183,28 @@ def list_parcel_ownership(parcel_id):
     return jsonify({"items": [_ownership_response(record) for record in records]})
 
 
+@bp.route("/parcels/<parcel_id>/ownership/current", methods=["GET"])
+@roles_required(*OWNERSHIP_READ_ROLES)
+def list_current_parcel_ownership(parcel_id):
+    records = _ownership_service().list_current_for_parcel(parcel_id)
+    return jsonify({"items": [_ownership_response(record) for record in records]})
+
+
+@bp.route("/parcels/<parcel_id>/ownership/history", methods=["GET"])
+@roles_required(*OWNERSHIP_READ_ROLES)
+def list_parcel_ownership_history(parcel_id):
+    records = _ownership_service().list_history_for_parcel(parcel_id)
+    return jsonify({"items": [_ownership_response(record) for record in records]})
+
+
+@bp.route("/parcels/<parcel_id>/ownership/events", methods=["GET"])
+@roles_required(*OWNERSHIP_READ_ROLES)
+def list_parcel_ownership_events(parcel_id):
+    """Traceable provenance of finalized transfers for a parcel."""
+    events = _transfer_service().list_ownership_events(parcel_id)
+    return jsonify({"items": events})
+
+
 @bp.route("/ownership", methods=["POST"])
 @roles_required(*OWNERSHIP_RECORD_ROLES)
 def create_ownership():
@@ -159,6 +218,7 @@ def _transfer_response(transfer: TransferRequest):
         "parcel_id": transfer.parcel_id,
         "seller_id": transfer.seller_id,
         "buyer_reference": transfer.buyer_reference,
+        "buyer_id": transfer.buyer_id,
         "status": transfer.status.value,
         "reviewer_id": transfer.reviewer_id,
         "review_reason": transfer.review_reason,
@@ -234,10 +294,10 @@ def cancel_transfer(request_id):
     service = _transfer_service()
     request_id = validate_request_id(request_id)
     body = request.get_json(silent=True)
-    reason = None
-    if isinstance(body, dict):
-        reason = body.get("reason")
-    transfer = service.cancel_request(g.current_user_id, request_id, reason)
+    validated = validate_review_decision(body if body is not None else {})
+    transfer = service.cancel_request(
+        g.current_user_id, request_id, validated["reason"]
+    )
     return jsonify({"transfer": _transfer_response(transfer)})
 
 
@@ -249,18 +309,26 @@ def list_registrar_transfers():
     return jsonify({"items": [_transfer_response(transfer) for transfer in transfers]})
 
 
+@bp.route("/registrar/transfers/<request_id>/review", methods=["POST"])
+@roles_required(*TRANSFER_REVIEW_ROLES)
+def start_transfer_review(request_id):
+    service = _transfer_service()
+    request_id = validate_request_id(request_id)
+    body = request.get_json(silent=True)
+    validated = validate_review_decision(body if body is not None else {})
+    transfer = service.start_review(
+        g.current_user_id, g.current_user_role, request_id, validated["reason"]
+    )
+    return jsonify({"transfer": _transfer_response(transfer)})
+
+
 @bp.route("/registrar/transfers/<request_id>/approve", methods=["POST"])
 @roles_required(*TRANSFER_REVIEW_ROLES)
 def approve_transfer(request_id):
     service = _transfer_service()
     request_id = validate_request_id(request_id)
     body = request.get_json(silent=True)
-    reason = None
-    if isinstance(body, dict):
-        reason = body.get("reason")
-    from app.transfers.validation import validate_review_decision
-
-    validated = validate_review_decision({"reason": reason} if reason is not None else {})
+    validated = validate_review_decision(body if body is not None else {})
     transfer = service.approve_request(
         g.current_user_id, request_id, validated["reason"]
     )
@@ -276,6 +344,25 @@ def reject_transfer(request_id):
     validated = validate_review_decision(body, require_reason=True)
     transfer = service.reject_request(
         g.current_user_id, request_id, validated["reason"]
+    )
+    return jsonify({"transfer": _transfer_response(transfer)})
+
+
+@bp.route(
+    "/registrar/transfers/<request_id>/blockchain/submit", methods=["POST"]
+)
+@roles_required(*TRANSFER_REVIEW_ROLES)
+def submit_transfer_to_blockchain(request_id):
+    """Submit an approved transfer through the blockchain gateway.
+
+    This only starts submission; it never confirms a transaction and never
+    changes ownership. Confirmation is processed server-side by
+    TransferService.finalize_transfer() using the trusted gateway.
+    """
+    service = _transfer_service()
+    request_id = validate_request_id(request_id)
+    transfer = service.submit_to_blockchain(
+        g.current_user_id, g.current_user_role, request_id
     )
     return jsonify({"transfer": _transfer_response(transfer)})
 
