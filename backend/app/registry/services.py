@@ -39,10 +39,12 @@ class ParcelService:
             raise ResourceNotFoundError("Parcel was not found.")
         return parcel
 
-    def create_parcel(self, data):
+    def create_parcel(self, data, creator_id=None):
         validated = validate_parcel_data(data)
         now = utc_now()
-        parcel = Parcel(**validated, created_at=now, updated_at=now)
+        parcel = Parcel(
+            **validated, created_at=now, updated_at=now, created_by=creator_id
+        )
         return self._require_repository().create_parcel(parcel)
 
     def update_parcel(self, parcel_id, data):

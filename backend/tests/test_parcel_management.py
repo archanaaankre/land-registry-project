@@ -72,6 +72,26 @@ def test_valid_creation_normalizes_cadastral_number(client, app):
     assert response.get_json()["parcel"]["cadastral_number"] == "CAD-001"
 
 
+def test_creator_is_attributed_on_parcel_creation(client, app):
+    response = register_parcel(client, app, "parcel-creator", "CAD-CREATOR")
+
+    assert response.status_code == 201
+    assert response.get_json()["parcel"]["created_by"] == "registrar-parcel-test"
+
+
+def test_created_by_is_preserved_on_parcel_update(client, app):
+    register_parcel(client, app, "parcel-creator-2", "CAD-CREATOR-2")
+
+    updated = client.patch(
+        "/api/parcels/parcel-creator-2",
+        headers=bearer(app, Role.REGISTRAR),
+        json={"location": "Ward 2"},
+    )
+
+    assert updated.status_code == 200
+    assert updated.get_json()["parcel"]["created_by"] == "registrar-parcel-test"
+
+
 @pytest.mark.parametrize(
     "duplicate_value",
     [

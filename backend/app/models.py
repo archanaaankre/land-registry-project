@@ -51,6 +51,10 @@ class Parcel:
     status: ParcelStatus
     created_at: datetime
     updated_at: datetime
+    # Creator attribution: the authenticated registrar who registered the
+    # parcel. Optional so existing records and domain-level construction stay
+    # compatible; populated from the request context on creation.
+    created_by: str | None = None
 
 
 @dataclass(frozen=True)

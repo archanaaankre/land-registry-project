@@ -1,5 +1,8 @@
 from flask import Blueprint, current_app, g, jsonify, request
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
+from app import db
 from app.auth.api_service import AuthApiService
 from app.auth.decorators import roles_required
 from app.auth.errors import InvalidInputError
@@ -77,6 +80,7 @@ def _parcel_response(parcel: Parcel):
         "area": str(parcel.area),
         "area_unit": parcel.area_unit.value,
         "status": parcel.status.value,
+        "created_by": parcel.created_by,
         "created_at": parcel.created_at.isoformat(),
         "updated_at": parcel.updated_at.isoformat(),
     }
@@ -94,8 +98,27 @@ def _ownership_response(ownership: Ownership):
     }
 
 
+def _database_available():
+    """Confirm the configured database answers a trivial query.
+
+    Returns a plain boolean so the health response can never leak connection
+    details, SQL, or exception text.
+    """
+    try:
+        db.session.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        db.session.rollback()
+        return False
+    return True
+
+
 @bp.route("/health", methods=["GET"])
 def health():
+    if not _database_available():
+        return (
+            jsonify({"status": "unavailable", "service": "land-registry-backend"}),
+            503,
+        )
     return jsonify({"status": "ok", "service": "land-registry-backend"})
 
 
@@ -148,7 +171,9 @@ def list_parcels():
 @bp.route("/parcels", methods=["POST"])
 @roles_required(*PARCEL_MANAGE_ROLES)
 def create_parcel():
-    parcel = _parcel_service().create_parcel(_json_body())
+    parcel = _parcel_service().create_parcel(
+        _json_body(), creator_id=g.current_user_id
+    )
     return jsonify({"parcel": _parcel_response(parcel)}), 201
 
 
@@ -210,6 +235,13 @@ def list_parcel_ownership_events(parcel_id):
 def create_ownership():
     ownership = _ownership_service().create_ownership(_json_body())
     return jsonify({"ownership": _ownership_response(ownership)}), 201
+
+
+@bp.route("/ownership/<ownership_id>", methods=["GET"])
+@roles_required(*OWNERSHIP_READ_ROLES)
+def get_ownership(ownership_id):
+    ownership = _ownership_service().get_ownership(ownership_id)
+    return jsonify({"ownership": _ownership_response(ownership)})
 
 
 def _transfer_response(transfer: TransferRequest):

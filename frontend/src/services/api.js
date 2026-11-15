@@ -1,3 +1,5 @@
+import { resolveApiErrorMessage } from './apiErrorMessages.js'
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 
 export class ApiError extends Error {
@@ -58,10 +60,11 @@ async function apiRequest(path, { method = 'GET', body, signal, token } = {}) {
 
   if (!response.ok) {
     const error = responseBody?.error
-    const message =
-      response.status >= 500
-        ? 'This request could not be completed. Please try again.'
-        : error?.message || 'This request could not be completed. Please try again.'
+    const message = resolveApiErrorMessage(
+      response.status,
+      error?.code || null,
+      error?.message,
+    )
     throw new ApiError(
       message,
       response.status,
