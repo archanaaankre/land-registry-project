@@ -342,6 +342,43 @@ def test_api_response_shapes_exclude_sensitive_information():
 
     assert parcel_body["area"] == "10"
     assert ownership_body["share"] == "100"
+    assert parcel_body["created_by"] is None
     for body in (parcel_body, ownership_body):
         assert not any("password" in key or "hash" in key for key in body)
         assert not any("secret" in key for key in body)
+
+
+def test_get_ownership_by_id_returns_record(app, client):
+    ownership_repository = Mock()
+    ownership_repository.find_by_id.return_value = Ownership(
+        ownership_id="ownership-1",
+        parcel_id="parcel-1",
+        owner_id="citizen-1",
+        share=Decimal("100"),
+        status=OwnershipStatus.ACTIVE,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+    app.config["OWNERSHIP_REPOSITORY"] = ownership_repository
+
+    response = client.get(
+        "/api/ownership/ownership-1", headers=bearer(app, Role.CITIZEN)
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["ownership"]["ownership_id"] == "ownership-1"
+    assert response.get_json()["ownership"]["owner_id"] == "citizen-1"
+    ownership_repository.find_by_id.assert_called_once_with("ownership-1")
+
+
+def test_get_ownership_by_id_returns_not_found(app, client):
+    ownership_repository = Mock()
+    ownership_repository.find_by_id.return_value = None
+    app.config["OWNERSHIP_REPOSITORY"] = ownership_repository
+
+    response = client.get(
+        "/api/ownership/missing-ownership", headers=bearer(app, Role.CITIZEN)
+    )
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "not_found"

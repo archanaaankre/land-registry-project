@@ -426,8 +426,17 @@ dd {
 .checkbox-label {
   display: flex;
   gap: 0.6rem;
-  align-items: flex-start;
+  align-items: center;
   font-weight: var(--font-weight-regular);
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  min-width: 1rem;
+  min-height: 1rem;
+  flex-shrink: 0;
+  margin: 0;
 }
 
 /* ============================================================
@@ -1305,6 +1314,56 @@ dd {
 @media (max-width: 640px) {
   .definition-list div,
   .timeline-details div {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================
+   Dashboard charts
+   ============================================================ */
+.dashboard-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.chart-container {
+  width: 100%;
+  min-height: 260px;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--color-text);
+}
+
+.chart-legend-color {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--color-border);
+}
+
+.chart-legend-value {
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-bold);
+}
+
+@media (max-width: 640px) {
+  .dashboard-charts-grid {
     grid-template-columns: 1fr;
   }
 }
