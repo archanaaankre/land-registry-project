@@ -1,4 +1,5 @@
 import { ApiError, apiGet } from './api.js'
+import { listDocumentHashes } from './documentService.js'
 import { listParcels, getParcelOwnership } from './parcelService.js'
 
 const MEASUREMENT_SAMPLE_SIZE = 5
@@ -46,36 +47,125 @@ function sortEventsChronologically(events) {
   })
 }
 
-export function getTamperDetectionSummary() {
-  return createUnavailableMetric(
-    'not_implemented',
-    {
-      title: 'Tamper detection',
+export async function getDocumentIntegritySummary({ token, signal } = {}) {
+  if (!token) {
+    return createUnavailableMetric('missing_authentication', {
+      title: 'Document integrity',
+      message: 'Authentication is required to verify document integrity.',
+      disclaimer:
+        'A matching cryptographic hash establishes content consistency with a recorded hash. It does not establish the document’s legal authenticity.',
+    })
+  }
+
+  try {
+    const { data } = await listDocumentHashes({ signal })
+    const documents = data.documents ?? []
+
+    let matched = 0
+    let mismatched = 0
+    let notVerified = 0
+
+    for (const doc of documents) {
+      if (doc.last_verification_status === 'MATCHED') {
+        matched += 1
+      } else if (doc.last_verification_status === 'MISMATCHED') {
+        mismatched += 1
+      } else {
+        notVerified += 1
+      }
+    }
+
+    return {
+      status: 'loaded',
+      title: 'Document integrity',
+      totalDocuments: documents.length,
+      matched,
+      mismatched,
+      notVerified,
+      disclaimer:
+        'A matching cryptographic hash establishes content consistency with a recorded hash. It does not establish the document’s legal authenticity.',
+    }
+  } catch (error) {
+    if (error?.name === 'AbortError' || signal?.aborted) {
+      throw error
+    }
+    return createUnavailableMetric(error?.code || 'verification_failed', {
+      title: 'Document integrity',
       message:
-        'No tamper-detection test runner, modified-document comparison, or unauthorized ownership-update workflow is implemented in this build. Counts and detection rates are therefore not available.',
+        error?.message ||
+        'Document integrity verification is temporarily unavailable.',
+      disclaimer:
+        'A matching cryptographic hash establishes content consistency with a recorded hash. It does not establish the document’s legal authenticity.',
+    })
+  }
+}
+
+export async function getTamperDetectionSummary({ token, signal } = {}) {
+  if (!token) {
+    return createUnavailableMetric('missing_authentication', {
+      title: 'Tamper detection',
+      message: 'Authentication is required for tamper detection.',
       formula:
         'Detection rate = correctly detected tampering attempts / total tampering attempts tested x 100',
       denominatorRule: 'Only tampering attempts belong in the denominator; original-record integrity checks are reported separately.',
-    },
-  )
-}
+    })
+  }
 
-export function getDocumentIntegritySummary() {
-  return createUnavailableMetric(
-    'not_implemented',
-    {
-      title: 'Document integrity',
+  try {
+    const { data } = await listDocumentHashes({ signal })
+    const documents = data.documents ?? []
+
+    let matched = 0
+    let mismatched = 0
+    let notVerified = 0
+
+    for (const doc of documents) {
+      if (doc.last_verification_status === 'MATCHED') {
+        matched += 1
+      } else if (doc.last_verification_status === 'MISMATCHED') {
+        mismatched += 1
+      } else {
+        notVerified += 1
+      }
+    }
+
+    const totalTested = matched + mismatched
+    const detectionRate =
+      totalTested > 0 ? (mismatched / totalTested) * 100 : null
+
+    return {
+      status: 'loaded',
+      title: 'Tamper detection',
+      totalDocuments: documents.length,
+      verified: matched,
+      modified: mismatched,
+      notVerified,
+      totalTested,
+      detectionRate: detectionRate !== null ? Math.round(detectionRate * 10) / 10 : null,
+      formula:
+        'Detection rate = modified documents detected / total documents tested x 100',
+      denominatorRule:
+        'Only documents that have been verified belong in the denominator; documents never verified are reported separately.',
+    }
+  } catch (error) {
+    if (error?.name === 'AbortError' || signal?.aborted) {
+      throw error
+    }
+    return createUnavailableMetric(error?.code || 'detection_failed', {
+      title: 'Tamper detection',
       message:
-        'No document upload, storage, cryptographic hashing, or hash-verification endpoint is implemented in this build. No hashes or verification results are available.',
-      disclaimer:
-        'A matching cryptographic hash establishes content consistency with a recorded hash. It does not establish the document’s legal authenticity.',
-    },
-  )
+        error?.message ||
+        'Tamper detection is temporarily unavailable.',
+      formula:
+        'Detection rate = correctly detected tampering attempts / total tampering attempts tested x 100',
+      denominatorRule: 'Only tampering attempts belong in the denominator; original-record integrity checks are reported separately.',
+    })
+  }
 }
 
 export const ACCESS_CONTROL_POLICY = {
   source: 'Backend authorization constants and protected routes (app/registry/authorization.py, app/auth/decorators.py).',
-  roles: ['CITIZEN', 'REGISTRAR', 'ADMIN'],
+  roles: ['CITIZEN', 'REGISTRAR', 'ADMIN', 'VERIFICATION_OFFICER'],
   actions: [
     {
       key: 'view-parcels',

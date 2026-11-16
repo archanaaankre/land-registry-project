@@ -1323,14 +1323,16 @@ dd {
    ============================================================ */
 .dashboard-charts-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
   gap: 1rem;
   margin-top: 1rem;
 }
 
 .chart-container {
   width: 100%;
+  min-width: 0;
   min-height: 260px;
+  height: 260px;
 }
 
 .chart-legend {
@@ -1365,5 +1367,123 @@ dd {
 @media (max-width: 640px) {
   .dashboard-charts-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================
+   Admin pages
+   ============================================================ */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.stat-card {
+  min-width: 0;
+  padding: 1.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.stat-card h3 {
+  margin: 0 0 0.5rem;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.stat-value {
+  margin: 0 0 0.5rem;
+  color: var(--color-text);
+  font-size: 2rem;
+  font-weight: var(--font-weight-bold);
+  line-height: 1;
+}
+
+.stat-detail {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+}
+
+.role-breakdown {
+  margin-top: 1rem;
+}
+
+.role-breakdown h3 {
+  margin: 0 0 0.5rem;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.role-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.role-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.role-label {
+  color: var(--color-text);
+  font-size: 0.875rem;
+}
+
+.role-count {
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-bold);
+}
+
+.user-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.user-toolbar-actions select {
+  min-height: 2.7rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.user-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .user-toolbar-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .user-toolbar-actions select {
+    width: 100%;
   }
 }

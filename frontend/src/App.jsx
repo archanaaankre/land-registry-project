@@ -6,6 +6,10 @@ import AppLayout from './components/layout/AppLayout.jsx'
 import Login from './pages/Login.jsx'
 import Register from './pages/Register.jsx'
 import Dashboard from './pages/Dashboard.jsx'
+import AdminDashboard from './pages/AdminDashboard.jsx'
+import AdminUserManagement from './pages/AdminUserManagement.jsx'
+import DocumentIntegrity from './pages/DocumentIntegrity.jsx'
+import TamperDetection from './pages/TamperDetection.jsx'
 import Parcels from './pages/Parcels.jsx'
 import ParcelDetails from './pages/ParcelDetails.jsx'
 import EvaluationDashboard from './pages/EvaluationDashboard.jsx'
@@ -14,7 +18,7 @@ import TransferRequestDetails from './pages/TransferRequestDetails.jsx'
 import RegistrarTransfers from './pages/RegistrarTransfers.jsx'
 import Landing from './pages/Landing.jsx'
 
-const supportedRoles = ['CITIZEN', 'REGISTRAR', 'ADMIN']
+const supportedRoles = ['CITIZEN', 'REGISTRAR', 'ADMIN', 'VERIFICATION_OFFICER']
 
 function AppRoutes() {
   return (
@@ -26,6 +30,12 @@ function AppRoutes() {
       <Route element={<ProtectedRoute allowedRoles={supportedRoles} />}>
         <Route element={<AppLayout />}>
           <Route element={<Dashboard />} path="dashboard" />
+          <Route element={<DocumentIntegrity />} path="documents/integrity" />
+          <Route element={<TamperDetection />} path="documents/tamper" />
+          <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
+            <Route element={<AdminDashboard />} path="admin/dashboard" />
+            <Route element={<AdminUserManagement />} path="admin/users" />
+          </Route>
           <Route element={<Parcels />} path="parcels" />
           <Route element={<ParcelDetails />} path="parcels/:parcelId" />
           <Route element={<EvaluationDashboard />} path="evaluation" />

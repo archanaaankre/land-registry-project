@@ -46,7 +46,10 @@ export default function TransferRequests() {
       }
       if (!signal.aborted) {
         setRequests([])
-        setError('We couldn’t load transfer requests. Please try again.')
+        setError(
+          requestError.message ||
+            'We couldn’t load transfer requests. Please try again.',
+        )
       }
     }
   }, [logout, navigate])
