@@ -10,6 +10,7 @@ from app.auth.errors import (
     ResourceConflictError,
     ResourceNotFoundError,
 )
+from app.document_integrity.models import DocumentVerificationStatus
 from app.models import (
     BlockchainSubmissionStatus,
     OwnershipStatus,
@@ -18,6 +19,7 @@ from app.models import (
 )
 from app.persistence.errors import DatabaseUnavailableError
 from app.persistence.models import (
+    DocumentHashModel,
     OwnershipModel,
     ParcelModel,
     TransferAuditEventModel,
@@ -118,6 +120,54 @@ class SqlAlchemyUserRepository:
     def get_user_by_id(self, user_id):
         user = _query(lambda: db.session.get(UserModel, user_id))
         return user.to_domain() if user is not None else None
+
+    def list_users(self, *, search=None, role=None, is_active=None):
+        query = UserModel.query
+        if search:
+            pattern = _like_pattern(search)
+            query = query.filter(
+                or_(
+                    UserModel.name.ilike(pattern, escape="\\"),
+                    UserModel.email.ilike(pattern, escape="\\"),
+                )
+            )
+        if role is not None:
+            query = query.filter(UserModel.role == role.value if hasattr(role, "value") else role)
+        if is_active is not None:
+            query = query.filter(UserModel.is_active == is_active)
+        models = _query(
+            lambda: query.order_by(UserModel.created_at, UserModel.email).all()
+        )
+        return [model.to_domain() for model in models]
+
+    def update_user_role(self, user_id, role):
+        result = _query(
+            lambda: db.session.execute(
+                update(UserModel)
+                .where(UserModel.id == user_id)
+                .values(
+                    role=role.value if hasattr(role, "value") else str(role),
+                    updated_at=utc_now(),
+                )
+            )
+        )
+        if result.rowcount != 1:
+            raise ResourceNotFoundError("User was not found.")
+        _commit()
+        return self.get_user_by_id(user_id)
+
+    def update_user_active_status(self, user_id, is_active):
+        result = _query(
+            lambda: db.session.execute(
+                update(UserModel)
+                .where(UserModel.id == user_id)
+                .values(is_active=is_active, updated_at=utc_now())
+            )
+        )
+        if result.rowcount != 1:
+            raise ResourceNotFoundError("User was not found.")
+        _commit()
+        return self.get_user_by_id(user_id)
 
 
 def _user_id_from_email(email):
@@ -886,8 +936,70 @@ def repository_bootstrap(app):
         app.config["OWNERSHIP_REPOSITORY"] = SqlAlchemyOwnershipRepository()
     if app.config.get("TRANSFER_REPOSITORY") is None:
         app.config["TRANSFER_REPOSITORY"] = SqlAlchemyTransferRepository()
+    if app.config.get("DOCUMENT_HASH_REPOSITORY") is None:
+        app.config["DOCUMENT_HASH_REPOSITORY"] = SqlAlchemyDocumentHashRepository()
     if app.config.get("BLOCKCHAIN_GATEWAY") is None:
         # Honest default until Person 1 injects the real integration gateway.
         from app.transfers.blockchain import UnavailableBlockchainGateway
 
         app.config["BLOCKCHAIN_GATEWAY"] = UnavailableBlockchainGateway()
+
+
+class SqlAlchemyDocumentHashRepository:
+    """Persistence layer for stored document hashes."""
+
+    def create_document_hash(self, document_hash):
+        model = DocumentHashModel(
+            document_id=document_hash.document_id,
+            parcel_id=document_hash.parcel_id,
+            document_name=document_hash.document_name,
+            document_hash=document_hash.document_hash,
+            uploaded_by=document_hash.uploaded_by,
+            uploaded_at=document_hash.uploaded_at,
+            verification_count=document_hash.verification_count,
+            last_verified_at=document_hash.last_verified_at,
+            last_verification_status=(
+                document_hash.last_verification_status.value
+                if document_hash.last_verification_status is not None
+                else None
+            ),
+        )
+        db.session.add(model)
+        _commit()
+        return model.to_domain()
+
+    def find_by_id(self, document_id):
+        model = _query(lambda: db.session.get(DocumentHashModel, document_id))
+        return model.to_domain() if model is not None else None
+
+    def find_by_name_and_parcel(self, document_name, parcel_id):
+        query = DocumentHashModel.query.filter_by(
+            document_name=document_name.strip(), parcel_id=parcel_id
+        )
+        model = _query(lambda: query.first())
+        return model.to_domain() if model is not None else None
+
+    def increment_verification(self, document_id, verified_at, status):
+        result = _query(
+            lambda: db.session.execute(
+                update(DocumentHashModel)
+                .where(DocumentHashModel.document_id == document_id)
+                .values(
+                    verification_count=DocumentHashModel.verification_count + 1,
+                    last_verified_at=verified_at,
+                    last_verification_status=status.value,
+                )
+            )
+        )
+        if result.rowcount != 1:
+            raise ResourceNotFoundError("Document hash was not found.")
+        _commit()
+
+    def list_document_hashes(self, *, parcel_id=None):
+        query = DocumentHashModel.query
+        if parcel_id is not None:
+            query = query.filter_by(parcel_id=parcel_id)
+        models = _query(
+            lambda: query.order_by(DocumentHashModel.uploaded_at.desc()).all()
+        )
+        return [model.to_domain() for model in models]

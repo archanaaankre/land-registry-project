@@ -8,6 +8,7 @@ class Role(str, Enum):
     CITIZEN = "CITIZEN"
     REGISTRAR = "REGISTRAR"
     ADMIN = "ADMIN"
+    VERIFICATION_OFFICER = "VERIFICATION_OFFICER"
 
 
 class ParcelStatus(str, Enum):
@@ -39,6 +40,7 @@ class User:
     password_hash: str
     role: Role
     name: str = ""
+    is_active: bool = True
 
 
 @dataclass(frozen=True)

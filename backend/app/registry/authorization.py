@@ -1,7 +1,7 @@
 from app.models import Role
 
-PARCEL_READ_ROLES = (Role.CITIZEN, Role.REGISTRAR, Role.ADMIN)
-OWNERSHIP_READ_ROLES = (Role.CITIZEN, Role.REGISTRAR, Role.ADMIN)
+PARCEL_READ_ROLES = (Role.CITIZEN, Role.REGISTRAR, Role.ADMIN, Role.VERIFICATION_OFFICER)
+OWNERSHIP_READ_ROLES = (Role.CITIZEN, Role.REGISTRAR, Role.ADMIN, Role.VERIFICATION_OFFICER)
 
 # Administrative access is not legal authority to record parcel or ownership changes.
 PARCEL_MANAGE_ROLES = (Role.REGISTRAR,)
