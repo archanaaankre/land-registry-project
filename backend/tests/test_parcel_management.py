@@ -4,6 +4,7 @@ from pathlib import Path
 from decimal import Decimal
 
 import pytest
+from unittest.mock import Mock
 
 from app import create_app, db
 from app.auth.service import create_access_token
@@ -26,6 +27,13 @@ def app(tmp_path, monkeypatch):
     )
     with application.app_context():
         db.create_all()
+    auth_repository = Mock()
+    auth_repository.get_auth_state_by_id.side_effect = {
+        "registrar-parcel-test": (True, Role.REGISTRAR),
+        "citizen-parcel-test": (True, Role.CITIZEN),
+        "admin-parcel-test": (True, Role.ADMIN),
+    }.get
+    application.config["AUTH_USER_REPOSITORY"] = auth_repository
     application.config["PARCEL_REPOSITORY"] = SqlAlchemyParcelRepository()
     yield application
     with application.app_context():

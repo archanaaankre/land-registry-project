@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -47,9 +48,15 @@ class UserModel(db.Model):
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
     updated_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
 
     __table_args__ = (
-        CheckConstraint("role IN ('CITIZEN','REGISTRAR','ADMIN')", name="users_role"),
+        CheckConstraint(
+            "role IN ('CITIZEN','REGISTRAR','VERIFICATION_OFFICER','ADMIN')",
+            name="users_role",
+        ),
     )
 
     def to_domain(self):
@@ -61,6 +68,7 @@ class UserModel(db.Model):
             email=self.email,
             password_hash=self.password_hash,
             role=Role(self.role),
+            is_active=self.is_active,
         )
 
 

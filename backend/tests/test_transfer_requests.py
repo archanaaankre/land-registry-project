@@ -566,6 +566,8 @@ def test_buyer_can_read_transfer_submitted_with_email_reference(app, client):
     user_repository = Mock()
     user_repository.get_user_by_id.return_value = user_record()
     configure_repositories(app, transfer_repository, Mock(), Mock(), user_repository)
+    user_repository.get_auth_state_by_id.side_effect = None
+    user_repository.get_auth_state_by_id.return_value = (True, Role.CITIZEN)
 
     response = client.get(
         "/api/transfers/request-1",

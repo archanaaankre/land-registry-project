@@ -7,6 +7,7 @@ from enum import Enum
 class Role(str, Enum):
     CITIZEN = "CITIZEN"
     REGISTRAR = "REGISTRAR"
+    VERIFICATION_OFFICER = "VERIFICATION_OFFICER"
     ADMIN = "ADMIN"
 
 
@@ -39,6 +40,7 @@ class User:
     password_hash: str
     role: Role
     name: str = ""
+    is_active: bool = True
 
 
 @dataclass(frozen=True)

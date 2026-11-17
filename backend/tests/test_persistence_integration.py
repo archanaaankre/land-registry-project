@@ -96,6 +96,27 @@ def test_user_registration_persists_across_application_restart(tmp_path):
     assert duplicate.status_code == 400
 
 
+def test_verification_officer_role_is_accepted_by_user_role_constraint(tmp_path):
+    database_url = _database_url(tmp_path)
+    app, user_repository, *_ = _prepare_app(database_url)
+
+    with app.app_context():
+        user = user_repository.create_user(
+            name="Verification Officer",
+            email="officer@example.com",
+            password_hash=hash_password("officer password"),
+            role=Role.VERIFICATION_OFFICER,
+        )
+
+    assert user.role is Role.VERIFICATION_OFFICER
+    assert user.is_active is True
+    with app.app_context():
+        assert user_repository.get_auth_state_by_id(user.id) == (
+            True,
+            Role.VERIFICATION_OFFICER,
+        )
+
+
 def test_parcel_and_ownership_records_are_persisted_and_protected(tmp_path):
     database_url = _database_url(tmp_path)
     app, user_repository, parcel_repository, ownership_repository, _ = _prepare_app(database_url)

@@ -1,6 +1,7 @@
+import logging
 from decimal import Decimal
 
-from sqlalchemy import func, or_, update
+from sqlalchemy import func, or_, text, update
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 
 from app import db
@@ -15,6 +16,7 @@ from app.models import (
     OwnershipStatus,
     Role,
     TransferStatus,
+    utc_now,
 )
 from app.persistence.errors import DatabaseUnavailableError
 from app.persistence.models import (
@@ -61,7 +63,10 @@ def _raise_cadastral_number_conflict():
     ) from None
 
 
-def _commit():
+_logger = logging.getLogger(__name__)
+
+
+def _commit(*, log_initial_admin_failure=False):
     try:
         db.session.commit()
     except IntegrityError as error:
@@ -72,13 +77,17 @@ def _commit():
             raise ResourceConflictError(
                 "This owner already has an active ownership record for the parcel."
             ) from None
+        if log_initial_admin_failure:
+            _log_initial_admin_failure(error, "commit")
         raise InvalidInputError("A matching database record already exists.") from None
-    except SQLAlchemyError:
+    except SQLAlchemyError as error:
         db.session.rollback()
+        if log_initial_admin_failure:
+            _log_initial_admin_failure(error, "commit")
         raise DatabaseUnavailableError() from None
 
 
-def _query(operation):
+def _query(operation, *, initial_admin_stage=None):
     try:
         return operation()
     except IntegrityError as error:
@@ -89,13 +98,34 @@ def _query(operation):
             raise ResourceConflictError(
                 "This owner already has an active ownership record for the parcel."
             ) from None
+        if initial_admin_stage is not None:
+            _log_initial_admin_failure(error, initial_admin_stage)
         raise DatabaseUnavailableError() from None
     except OperationalError as error:
         db.session.rollback()
+        if initial_admin_stage is not None:
+            _log_initial_admin_failure(error, initial_admin_stage)
         raise DatabaseUnavailableError() from None
     except SQLAlchemyError as error:
         db.session.rollback()
+        if initial_admin_stage is not None:
+            _log_initial_admin_failure(error, initial_admin_stage)
         raise DatabaseUnavailableError() from None
+
+
+def _log_initial_admin_failure(error, stage):
+    original_error = getattr(error, "orig", error)
+    sqlstate = getattr(original_error, "sqlstate", None) or getattr(
+        original_error, "pgcode", None
+    )
+    if not isinstance(sqlstate, str):
+        sqlstate = None
+    _logger.error(
+        "Initial Admin database %s failed (exception_type=%s, sqlstate=%s)",
+        stage,
+        type(error).__name__,
+        sqlstate,
+    )
 
 
 class SqlAlchemyUserRepository:
@@ -111,6 +141,38 @@ class SqlAlchemyUserRepository:
         _commit()
         return user.to_domain()
 
+    def create_initial_admin(self, *, name, email, password_hash):
+        if db.engine.dialect.name == "postgresql":
+            _query(
+                lambda: db.session.execute(
+                    text("SELECT pg_advisory_xact_lock(:namespace, :resource)"),
+                    {"namespace": 1279345234, "resource": 1},
+                ),
+                initial_admin_stage="advisory lock",
+            )
+
+        existing_admin = _query(
+            lambda: UserModel.query.filter_by(role=Role.ADMIN.value).first(),
+            initial_admin_stage="Admin lookup",
+        )
+        if existing_admin is not None:
+            db.session.rollback()
+            raise ResourceConflictError(
+                "An Admin account already exists. No account was created."
+            )
+
+        user = UserModel(
+            id=_user_id_from_email(email),
+            name=name.strip(),
+            email=email.strip().lower(),
+            password_hash=password_hash,
+            role=Role.ADMIN.value,
+            is_active=True,
+        )
+        db.session.add(user)
+        _commit(log_initial_admin_failure=True)
+        return user.to_domain()
+
     def get_user_by_email(self, email):
         user = _query(lambda: UserModel.query.filter_by(email=email.strip().lower()).first())
         return user.to_domain() if user is not None else None
@@ -118,6 +180,78 @@ class SqlAlchemyUserRepository:
     def get_user_by_id(self, user_id):
         user = _query(lambda: db.session.get(UserModel, user_id))
         return user.to_domain() if user is not None else None
+
+    def get_auth_state_by_id(self, user_id):
+        state = _query(
+            lambda: db.session.query(UserModel.is_active, UserModel.role)
+            .filter_by(id=user_id)
+            .first()
+        )
+        if state is None:
+            return None
+        is_active, role = state
+        return is_active, Role(role)
+
+    def list_users(self, *, role=None, is_active=None):
+        query = UserModel.query
+        if role is not None:
+            query = query.filter_by(role=Role(role).value)
+        if is_active is not None:
+            query = query.filter_by(is_active=is_active)
+        users = _query(lambda: query.order_by(UserModel.id).all())
+        return [user.to_domain() for user in users]
+
+    def update_user_role(self, user_id, role):
+        active_admins = _query(
+            lambda: UserModel.query.filter_by(
+                role=Role.ADMIN.value, is_active=True
+            )
+            .with_for_update()
+            .all()
+        )
+        user = _query(lambda: db.session.get(UserModel, user_id))
+        if user is None:
+            return None
+        if (
+            user.role == Role.ADMIN.value
+            and user.is_active
+            and Role(role) is not Role.ADMIN
+            and len(active_admins) <= 1
+        ):
+            raise ResourceConflictError(
+                "The last active Admin cannot be demoted."
+            )
+
+        user.role = Role(role).value
+        user.updated_at = utc_now()
+        _commit()
+        return user.to_domain()
+
+    def update_user_status(self, user_id, is_active):
+        active_admins = _query(
+            lambda: UserModel.query.filter_by(
+                role=Role.ADMIN.value, is_active=True
+            )
+            .with_for_update()
+            .all()
+        )
+        user = _query(lambda: db.session.get(UserModel, user_id))
+        if user is None:
+            return None
+        if (
+            user.role == Role.ADMIN.value
+            and user.is_active
+            and not is_active
+            and len(active_admins) <= 1
+        ):
+            raise ResourceConflictError(
+                "The last active Admin cannot be deactivated."
+            )
+
+        user.is_active = is_active
+        user.updated_at = utc_now()
+        _commit()
+        return user.to_domain()
 
 
 def _user_id_from_email(email):

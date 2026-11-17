@@ -43,7 +43,7 @@ class AuthApiService:
         validated = validate_login_input(data)
         repository = self._require_repository()
         user = repository.get_user_by_email(validated["email"])
-        if user is None or not verify_password(
+        if user is None or not user.is_active or not verify_password(
             user.password_hash, validated["password"]
         ):
             raise InvalidCredentialsError()

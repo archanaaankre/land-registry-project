@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import secrets
+from unittest.mock import Mock
 
 import jwt
 import pytest
@@ -23,6 +24,7 @@ from app.auth.service import (
 )
 from app.auth.validation import validate_login_input, validate_registration_input
 from app.models import Role, User
+from app.persistence.errors import DatabaseUnavailableError
 
 
 @pytest.fixture
@@ -32,6 +34,16 @@ def app():
         TESTING=True,
         JWT_SECRET_KEY=secrets.token_urlsafe(32),
     )
+    repository = Mock()
+    repository.get_auth_state_by_id.side_effect = lambda user_id: (
+        True,
+        {
+            "registrar-1": Role.REGISTRAR,
+            "admin-1": Role.ADMIN,
+            "officer-1": Role.VERIFICATION_OFFICER,
+        }.get(user_id, Role.CITIZEN),
+    )
+    application.config["AUTH_USER_REPOSITORY"] = repository
 
     @application.get("/api/test-protected")
     @roles_required(Role.REGISTRAR, Role.ADMIN)
@@ -116,6 +128,10 @@ def test_user_domain_model_has_supported_role():
     assert user.role is Role.CITIZEN
 
 
+def test_verification_officer_is_a_supported_role():
+    assert Role("VERIFICATION_OFFICER") is Role.VERIFICATION_OFFICER
+
+
 def test_access_token_creation_and_validation():
     secret = secrets.token_urlsafe(32)
     token = create_access_token("user-1", Role.REGISTRAR, secret)
@@ -124,6 +140,16 @@ def test_access_token_creation_and_validation():
 
     assert claims["sub"] == "user-1"
     assert claims["role"] == "REGISTRAR"
+
+
+def test_verification_officer_access_token_creation_and_validation():
+    secret = secrets.token_urlsafe(32)
+    token = create_access_token("officer-1", Role.VERIFICATION_OFFICER, secret)
+
+    claims = decode_access_token(token, secret)
+
+    assert claims["sub"] == "officer-1"
+    assert claims["role"] == "VERIFICATION_OFFICER"
 
 
 def test_configured_token_uses_environment_loaded_settings(app):
@@ -197,9 +223,10 @@ def test_authorization_rejects_missing_auth_invalid_token_and_disallowed_role(ap
     assert forbidden.get_json()["error"]["code"] == "forbidden"
 
 
-def test_authorization_allows_configured_role(app):
+@pytest.mark.parametrize("role", [Role.REGISTRAR, Role.ADMIN])
+def test_authorization_allows_configured_role(app, role):
     token = create_access_token(
-        "registrar-1", Role.REGISTRAR, app.config["JWT_SECRET_KEY"]
+        f"{role.value.lower()}-1", role, app.config["JWT_SECRET_KEY"]
     )
     response = app.test_client().get(
         "/api/test-protected",
@@ -208,6 +235,97 @@ def test_authorization_allows_configured_role(app):
 
     assert response.status_code == 200
     assert response.get_json() == {"user_id": "authorized"}
+
+
+def test_verification_officer_is_not_granted_registrar_or_admin_access(app):
+    token = create_access_token(
+        "officer-1", Role.VERIFICATION_OFFICER, app.config["JWT_SECRET_KEY"]
+    )
+
+    response = app.test_client().get(
+        "/api/test-protected",
+        headers={"Authorization": "Bearer " + token},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["error"]["code"] == "forbidden"
+
+
+def test_old_token_uses_current_database_role_for_authorization(app):
+    app.config["AUTH_USER_REPOSITORY"].get_auth_state_by_id.return_value = (
+        True,
+        Role.CITIZEN,
+    )
+    token = create_access_token(
+        "user-1", Role.ADMIN, app.config["JWT_SECRET_KEY"]
+    )
+
+    response = app.test_client().get(
+        "/api/test-protected",
+        headers={"Authorization": "Bearer " + token},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["error"]["code"] == "forbidden"
+
+
+def test_role_promotion_applies_to_existing_token(app):
+    app.config["AUTH_USER_REPOSITORY"].get_auth_state_by_id.side_effect = None
+    app.config["AUTH_USER_REPOSITORY"].get_auth_state_by_id.return_value = (
+        True,
+        Role.REGISTRAR,
+    )
+    token = create_access_token(
+        "user-1", Role.CITIZEN, app.config["JWT_SECRET_KEY"]
+    )
+
+    response = app.test_client().get(
+        "/api/test-protected",
+        headers={"Authorization": "Bearer " + token},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"user_id": "authorized"}
+
+
+@pytest.mark.parametrize(
+    "auth_state",
+    [None, (False, Role.REGISTRAR)],
+    ids=["deleted-user", "inactive-user"],
+)
+def test_protected_route_rejects_deleted_or_inactive_user_with_old_token(
+    app, auth_state
+):
+    app.config["AUTH_USER_REPOSITORY"].get_auth_state_by_id.side_effect = None
+    app.config["AUTH_USER_REPOSITORY"].get_auth_state_by_id.return_value = auth_state
+    token = create_access_token(
+        "registrar-1", Role.REGISTRAR, app.config["JWT_SECRET_KEY"]
+    )
+
+    response = app.test_client().get(
+        "/api/test-protected",
+        headers={"Authorization": "Bearer " + token},
+    )
+
+    assert response.status_code == 401
+    assert response.get_json()["error"]["code"] == "invalid_token"
+
+
+def test_protected_route_fails_closed_when_user_lookup_fails(app):
+    app.config["AUTH_USER_REPOSITORY"].get_auth_state_by_id.side_effect = (
+        DatabaseUnavailableError()
+    )
+    token = create_access_token(
+        "registrar-1", Role.REGISTRAR, app.config["JWT_SECRET_KEY"]
+    )
+
+    response = app.test_client().get(
+        "/api/test-protected",
+        headers={"Authorization": "Bearer " + token},
+    )
+
+    assert response.status_code == 503
+    assert response.get_json()["error"]["code"] == "database_unavailable"
 
 
 def test_authentication_error_responses_are_clean(app):

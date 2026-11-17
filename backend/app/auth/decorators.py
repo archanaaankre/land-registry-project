@@ -38,7 +38,24 @@ def roles_required(*allowed_roles):
             claims = decode_access_token(
                 token.strip(), secret_key
             )
-            role = Role(claims["role"])
+            from app.persistence.repositories import repository_bootstrap
+
+            repository_bootstrap(current_app)
+            repository = current_app.config.get("AUTH_USER_REPOSITORY")
+            get_auth_state = getattr(repository, "get_auth_state_by_id", None)
+            if not callable(get_auth_state):
+                raise AuthenticationUnavailableError()
+
+            auth_state = get_auth_state(claims["sub"])
+            if auth_state is None:
+                raise InvalidTokenError()
+            is_active, current_role = auth_state
+            if not is_active:
+                raise InvalidTokenError()
+            try:
+                role = Role(current_role)
+            except (TypeError, ValueError):
+                raise AuthenticationUnavailableError() from None
             if role not in allowed:
                 raise AuthorizationError()
 

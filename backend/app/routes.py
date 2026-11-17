@@ -6,6 +6,7 @@ from app import db
 from app.auth.api_service import AuthApiService
 from app.auth.decorators import roles_required
 from app.auth.errors import InvalidInputError
+from app.auth.user_management import AdminUserService
 from app.models import Ownership, Parcel, Role, TransferRequest
 from app.registry.authorization import (
     OWNERSHIP_READ_ROLES,
@@ -39,6 +40,16 @@ def _auth_service():
         service = AuthApiService(repository)
         current_app.extensions["auth_api_service"] = service
     return service
+
+
+def _admin_user_service():
+    repository_bootstrap(current_app)
+    repository = current_app.config.get("AUTH_USER_REPOSITORY")
+    if repository is None:
+        from app.auth.errors import AuthenticationUnavailableError
+
+        raise AuthenticationUnavailableError()
+    return AdminUserService(repository)
 
 
 def _json_body():
@@ -134,7 +145,12 @@ def login():
 
 
 @auth_bp.route("/me", methods=["GET"])
-@roles_required(Role.CITIZEN, Role.REGISTRAR, Role.ADMIN)
+@roles_required(
+    Role.CITIZEN,
+    Role.REGISTRAR,
+    Role.VERIFICATION_OFFICER,
+    Role.ADMIN,
+)
 def current_user():
     return jsonify(
         {
@@ -144,6 +160,43 @@ def current_user():
             }
         }
     )
+
+
+@bp.route("/admin/users", methods=["POST"])
+@roles_required(Role.ADMIN)
+def create_admin_user():
+    user = _admin_user_service().create_user(_json_body())
+    return jsonify({"user": user}), 201
+
+
+@bp.route("/admin/users", methods=["GET"])
+@roles_required(Role.ADMIN)
+def list_admin_users():
+    users = _admin_user_service().list_users(
+        role=request.args.get("role"),
+        is_active=request.args.get("is_active"),
+    )
+    return jsonify({"items": users})
+
+
+@bp.route("/admin/users/<user_id>", methods=["GET"])
+@roles_required(Role.ADMIN)
+def get_admin_user(user_id):
+    return jsonify({"user": _admin_user_service().get_user(user_id)})
+
+
+@bp.route("/admin/users/<user_id>/role", methods=["PATCH"])
+@roles_required(Role.ADMIN)
+def update_admin_user_role(user_id):
+    user = _admin_user_service().update_role(user_id, _json_body())
+    return jsonify({"user": user})
+
+
+@bp.route("/admin/users/<user_id>/status", methods=["PATCH"])
+@roles_required(Role.ADMIN)
+def update_admin_user_status(user_id):
+    user = _admin_user_service().update_status(user_id, _json_body())
+    return jsonify({"user": user})
 
 
 @bp.route("/parcels", methods=["GET"])
