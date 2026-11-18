@@ -16,9 +16,11 @@ from app.models import (
     OwnershipStatus,
     Role,
     TransferStatus,
+    utc_now,
 )
 from app.persistence.errors import DatabaseUnavailableError
 from app.persistence.models import (
+    AdminAuditEventModel,
     DocumentHashModel,
     OwnershipModel,
     ParcelModel,
@@ -28,6 +30,9 @@ from app.persistence.models import (
     normalized_cadastral_number_expression,
 )
 from app.registry.validation import normalize_cadastral_number
+
+
+_UNSET = object()
 
 
 def _is_cadastral_number_conflict(error):
@@ -101,16 +106,30 @@ def _query(operation):
 
 
 class SqlAlchemyUserRepository:
-    def create_user(self, *, name, email, password_hash, role):
-        user = UserModel(
-            id=_user_id_from_email(email),
-            name=name.strip(),
-            email=email.strip().lower(),
-            password_hash=password_hash,
-            role=role.value if hasattr(role, "value") else str(role),
-        )
-        db.session.add(user)
-        _commit()
+    def create_user(self, *, name, email, password_hash, role, audit_event_factory=None):
+        try:
+            user = UserModel(
+                id=_user_id_from_email(email),
+                name=name.strip(),
+                email=email.strip().lower(),
+                password_hash=password_hash,
+                role=role.value if hasattr(role, "value") else str(role),
+            )
+            db.session.add(user)
+            if audit_event_factory is not None:
+                # Flush the parent row first so the audit event's FK always
+                # references an existing user (same convention as transfers).
+                db.session.flush()
+                db.session.add(
+                    _admin_audit_event_model(audit_event_factory(user.id))
+                )
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            raise InvalidInputError("A matching database record already exists.") from None
+        except SQLAlchemyError:
+            db.session.rollback()
+            raise DatabaseUnavailableError() from None
         return user.to_domain()
 
     def get_user_by_email(self, email):
@@ -154,6 +173,125 @@ class SqlAlchemyUserRepository:
         if result.rowcount != 1:
             raise ResourceNotFoundError("User was not found.")
         _commit()
+        return self.get_user_by_id(user_id)
+
+    def update_user_role_with_admin_guard(self, user_id, role, audit_event_factory=None):
+        """Atomically change a role while preserving the last active admin.
+
+        Takes a row lock on every active ADMIN row (in deterministic id
+        order, so concurrent admin-removal transactions serialize without
+        deadlocking) inside the same transaction that applies the update, and
+        rolls everything back if removing the target as an active admin would
+        leave the system with no active admin. Reusing the existing checked
+        invariant, just inside the locked transaction.
+        """
+        role = Role(role)
+        return self._guarded_admin_mutation(
+            user_id, new_role=role, audit_event_factory=audit_event_factory
+        )
+
+    def update_user_active_status_with_admin_guard(self, user_id, is_active, audit_event_factory=None):
+        """Atomically change activation while preserving the last active admin.
+
+        Same locking discipline as update_user_role_with_admin_guard: the
+        last-active-admin check and the UPDATE happen in one transaction.
+        """
+        return self._guarded_admin_mutation(
+            user_id, set_active=bool(is_active), audit_event_factory=audit_event_factory
+        )
+
+    def _guarded_admin_mutation(self, user_id, *, new_role=_UNSET, set_active=_UNSET, audit_event_factory=None):
+        session = db.session
+        try:
+            # Step 1: unlocked read to see whether the caller is even
+            # touching a currently active admin. Non-admin mutations skip
+            # the admin-set lock entirely.
+            target = session.execute(
+                db.select(UserModel).where(UserModel.id == user_id)
+            ).scalar_one_or_none()
+            if target is None:
+                raise ResourceNotFoundError("User was not found.")
+
+            wants_demotion = (
+                new_role is not _UNSET
+                and hasattr(new_role, "value")
+                and new_role.value != Role.ADMIN.value
+            )
+            wants_deactivation = set_active is not _UNSET and set_active is False
+
+            def _loses_active_admin(row):
+                return (
+                    row.role == Role.ADMIN.value
+                    and row.is_active
+                    and (wants_demotion or wants_deactivation)
+                )
+
+            if _loses_active_admin(target):
+                # Step 2: lock the full set of active admin rows in id
+                # order. Every admin-removal transaction takes these locks
+                # in the same order, so they serialize instead of deadlocking.
+                admin_ids = [
+                    row[0]
+                    for row in session.execute(
+                        db.select(UserModel.id)
+                        .where(
+                            UserModel.role == Role.ADMIN.value,
+                            UserModel.is_active.is_(True),
+                        )
+                        .order_by(UserModel.id)
+                        .with_for_update()
+                    ).all()
+                ]
+                # Step 3: re-check the target under the locks: it may have
+                # been changed by a concurrent committed transaction.
+                target = session.execute(
+                    db.select(UserModel)
+                    .where(UserModel.id == user_id)
+                    .with_for_update()
+                ).scalar_one()
+                if _loses_active_admin(target):
+                    remaining = [admin_id for admin_id in admin_ids if admin_id != target.id]
+                    if not remaining:
+                        raise ResourceConflictError(
+                            "This change would leave the system without an active admin."
+                        )
+
+            values = {"updated_at": utc_now()}
+            if new_role is not _UNSET:
+                values["role"] = (
+                    new_role.value if hasattr(new_role, "value") else str(new_role)
+                )
+            if set_active is not _UNSET:
+                values["is_active"] = bool(set_active)
+            result = session.execute(
+                update(UserModel).where(UserModel.id == user_id).values(**values)
+            )
+            if result.rowcount != 1:
+                raise ResourceConflictError(
+                    "The user changed before this update could be saved."
+                )
+            if audit_event_factory is not None:
+                # The audit row commits in the SAME transaction as the
+                # mutation; if it fails, both roll back together.
+                session.add(
+                    _admin_audit_event_model(audit_event_factory(user_id))
+                )
+            session.commit()
+        except (
+            AuthorizationError,
+            InvalidInputError,
+            ResourceConflictError,
+            ResourceNotFoundError,
+        ):
+            session.rollback()
+            raise
+        except SQLAlchemyError:
+            session.rollback()
+            raise DatabaseUnavailableError() from None
+        except Exception:
+            # Never leave a dirty session/transaction behind on failure.
+            session.rollback()
+            raise
         return self.get_user_by_id(user_id)
 
     def update_user_active_status(self, user_id, is_active):
@@ -909,6 +1047,30 @@ class SqlAlchemyTransferRepository:
                 )
             )
         return domain_events
+
+
+def _admin_audit_event_model(event):
+    """Map a domain AdminAuditEvent onto its persistence row.
+
+    Only safe, non-secret identifiers are stored. Role transitions come from
+    ``event.detail`` (``from_role``/``to_role``; ``role`` for USER_CREATED);
+    activation transitions are implied by ``event_type``.
+    """
+    detail = getattr(event, "detail", None) or {}
+    return AdminAuditEventModel(
+        event_id=event.event_id,
+        actor_id=event.actor_id or None,
+        actor_role=(
+            event.actor_role.value
+            if hasattr(event.actor_role, "value")
+            else str(event.actor_role)
+        ),
+        target_user_id=event.target_user_id or None,
+        event_type=event.event_type,
+        from_role=detail.get("from_role"),
+        to_role=detail.get("to_role", detail.get("role")),
+        created_at=event.created_at,
+    )
 
 
 def _audit_event_model(event):

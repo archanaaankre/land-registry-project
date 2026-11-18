@@ -7,7 +7,7 @@ export async function listAdminUsers({ signal, search, role, isActive } = {}) {
   if (role) params.set('role', role)
   if (isActive !== undefined) params.set('is_active', String(isActive))
 
-  const path = params.toString() ? `/api/admin/users?${params.toString()}` : '/api/admin/users'
+  const path = params.toString() ? `/admin/users?${params.toString()}` : '/admin/users'
 
   try {
     const { data } = await apiGet(path, { signal, token: getAccessToken() })
@@ -28,7 +28,7 @@ export async function createAdminUser(payload, { signal } = {}) {
   }
 
   try {
-    const { data } = await apiPost('/api/admin/users', payload, { signal, token })
+    const { data } = await apiPost('/admin/users', payload, { signal, token })
     return data
   } catch (error) {
     if (error.status === 401) {
@@ -46,7 +46,7 @@ export async function updateAdminUserRole(userId, role, { signal } = {}) {
 
   try {
     const { data } = await apiPatch(
-      `/api/admin/users/${encodeURIComponent(userId)}/role`,
+      `/admin/users/${encodeURIComponent(userId)}/role`,
       { role },
       { signal, token }
     )
@@ -67,7 +67,7 @@ export async function updateAdminUserStatus(userId, isActive, { signal } = {}) {
 
   try {
     const { data } = await apiPatch(
-      `/api/admin/users/${encodeURIComponent(userId)}/status`,
+      `/admin/users/${encodeURIComponent(userId)}/status`,
       { is_active: isActive },
       { signal, token }
     )
@@ -87,7 +87,7 @@ export async function getAdminStats({ signal } = {}) {
   }
 
   try {
-    const { data } = await apiGet('/api/admin/stats', { signal, token })
+    const { data } = await apiGet('/admin/stats', { signal, token })
     return data
   } catch (error) {
     if (error.name === 'AbortError') throw error

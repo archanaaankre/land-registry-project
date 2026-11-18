@@ -35,7 +35,7 @@ from app.transfers.validation import (
 bp = Blueprint("api", __name__, url_prefix="/api")
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
-document_bp = Blueprint("document", __name__, url_prefix="/api/documents")
+document_bp = Blueprint("document", __name__, url_prefix="/documents")
 
 
 def _auth_service():
@@ -466,7 +466,9 @@ def list_admin_users():
 @roles_required(Role.ADMIN)
 def create_admin_user():
     service = _admin_service()
-    result = service.create_admin_user(_json_body())
+    result = service.create_admin_user(
+        _json_body(), actor_id=g.current_user_id, actor_role=g.current_user_role
+    )
     return jsonify(result), 201
 
 
@@ -481,7 +483,9 @@ def update_admin_user_role(user_id):
         role = Role(body["role"])
     except (TypeError, ValueError):
         raise InvalidInputError("Unsupported role.", field="role") from None
-    user = service.update_user_role(user_id, role)
+    user = service.update_user_role(
+        user_id, role, actor_id=g.current_user_id, actor_role=g.current_user_role
+    )
     return jsonify({"user": _user_response(user)})
 
 
@@ -494,7 +498,9 @@ def update_admin_user_status(user_id):
         raise InvalidInputError("Required fields are missing: is_active.", field="is_active")
     if not isinstance(body["is_active"], bool):
         raise InvalidInputError("is_active must be a boolean.", field="is_active")
-    user = service.update_user_active_status(user_id, body["is_active"])
+    user = service.update_user_active_status(
+        user_id, body["is_active"], actor_id=g.current_user_id, actor_role=g.current_user_role
+    )
     return jsonify({"user": _user_response(user)})
 
 

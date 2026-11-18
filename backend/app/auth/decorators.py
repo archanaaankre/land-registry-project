@@ -41,6 +41,7 @@ def roles_required(*allowed_roles):
             role = Role(claims["role"])
             if role not in allowed:
                 raise AuthorizationError()
+            _verify_account_is_active(claims["sub"])
 
             g.current_user_id = claims["sub"]
             g.current_user_role = role
@@ -49,3 +50,28 @@ def roles_required(*allowed_roles):
         return wrapped
 
     return decorate
+
+
+def _verify_account_is_active(user_id):
+    """Reject requests whose account no longer exists or is deactivated.
+
+    A valid JWT alone is not enough: the account is looked up on every
+    authenticated request and must exist and be active. When no user
+    repository is configured (e.g. service-level unit tests), there is
+    nothing to check against and the existing role-based behavior is
+    preserved. The role is intentionally NOT re-read from the database;
+    authorization still uses the JWT role claim.
+    """
+    from app.persistence.repositories import repository_bootstrap
+
+    repository_bootstrap(current_app)
+    repository = current_app.config.get("AUTH_USER_REPOSITORY")
+    if repository is None:
+        return
+
+    user = repository.get_user_by_id(user_id)
+    if user is None:
+        # The token references an account that no longer exists.
+        raise InvalidTokenError()
+    if not user.is_active:
+        raise AuthorizationError("Account is deactivated.")
