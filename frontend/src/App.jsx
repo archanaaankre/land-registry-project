@@ -6,6 +6,10 @@ import AppLayout from './components/layout/AppLayout.jsx'
 import Login from './pages/Login.jsx'
 import Register from './pages/Register.jsx'
 import Dashboard from './pages/Dashboard.jsx'
+import AdminDashboard from './pages/AdminDashboard.jsx'
+import AdminUserManagement from './pages/AdminUserManagement.jsx'
+import DocumentIntegrity from './pages/DocumentIntegrity.jsx'
+import TamperDetection from './pages/TamperDetection.jsx'
 import Parcels from './pages/Parcels.jsx'
 import ParcelDetails from './pages/ParcelDetails.jsx'
 import EvaluationDashboard from './pages/EvaluationDashboard.jsx'
@@ -13,11 +17,9 @@ import TransferRequests from './pages/TransferRequests.jsx'
 import TransferRequestDetails from './pages/TransferRequestDetails.jsx'
 import RegistrarTransfers from './pages/RegistrarTransfers.jsx'
 import Landing from './pages/Landing.jsx'
-import AdminUsers from './pages/AdminUsers.jsx'
 
 const supportedRoles = ['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER', 'ADMIN']
-const parcelRoles = ['CITIZEN', 'REGISTRAR', 'ADMIN']
-const transferReadRoles = ['CITIZEN', 'REGISTRAR', 'ADMIN']
+const registryReadRoles = ['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER', 'ADMIN']
 
 function AppRoutes() {
   return (
@@ -29,20 +31,25 @@ function AppRoutes() {
       <Route element={<ProtectedRoute allowedRoles={supportedRoles} />}>
         <Route element={<AppLayout />}>
           <Route element={<Dashboard />} path="dashboard" />
-          <Route element={<ProtectedRoute allowedRoles={parcelRoles} />}>
+
+          <Route element={<DocumentIntegrity />} path="documents/integrity" />
+          <Route element={<TamperDetection />} path="documents/tamper" />
+
+          <Route element={<ProtectedRoute allowedRoles={registryReadRoles} />}>
             <Route element={<Parcels />} path="parcels" />
             <Route element={<ParcelDetails />} path="parcels/:parcelId" />
             <Route element={<EvaluationDashboard />} path="evaluation" />
-          </Route>
-          <Route element={<ProtectedRoute allowedRoles={transferReadRoles} />}>
             <Route element={<TransferRequests />} path="transfers" />
             <Route element={<TransferRequestDetails />} path="transfers/:requestId" />
           </Route>
+
           <Route element={<ProtectedRoute allowedRoles={['REGISTRAR']} />} path="registrar/transfers">
             <Route element={<RegistrarTransfers />} index />
           </Route>
-          <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />} path="admin/users">
-            <Route element={<AdminUsers />} index />
+
+          <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
+            <Route element={<AdminDashboard />} path="admin/dashboard" />
+            <Route element={<AdminUserManagement />} path="admin/users" />
           </Route>
         </Route>
       </Route>

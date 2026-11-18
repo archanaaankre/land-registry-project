@@ -44,11 +44,11 @@ class AdminUserService:
         )
         return _safe_user(user)
 
-    def list_users(self, *, role=None, is_active=None):
+    def list_users(self, *, search=None, role=None, is_active=None):
         validated_role = _validate_role_filter(role)
         validated_active = _validate_active_filter(is_active)
         users = self._repository.list_users(
-            role=validated_role, is_active=validated_active
+            search=search, role=validated_role, is_active=validated_active
         )
         return [_safe_user(user) for user in users]
 

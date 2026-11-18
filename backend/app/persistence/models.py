@@ -16,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app import db
+from app.document_integrity.models import DocumentVerificationStatus
 from app.models import (
     AreaUnit,
     BlockchainSubmissionStatus,
@@ -48,6 +49,8 @@ class UserModel(db.Model):
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
     updated_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    # Single canonical definition: keep Person 1's server_default so existing
+    # rows and raw inserts receive a valid value (Person 2's revision omitted it).
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
@@ -253,4 +256,60 @@ class TransferAuditEventModel(db.Model):
             to_status=TransferStatus(self.to_status),
             reason=self.reason,
             created_at=self.created_at,
+        )
+
+
+class DocumentHashModel(db.Model):
+    """Stored trusted SHA-256 hashes of documents for integrity verification."""
+
+    __tablename__ = "document_hashes"
+
+    document_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    parcel_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("parcels.parcel_id"), nullable=True, index=True
+    )
+    document_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    document_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    uploaded_by: Mapped[str] = mapped_column(
+        String(128), ForeignKey("users.id"), nullable=False, index=True
+    )
+    uploaded_at: Mapped[object] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    verification_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    last_verified_at: Mapped[object | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_verification_status: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_document_hashes_name_per_parcel",
+            "document_name",
+            "parcel_id",
+            unique=True,
+            postgresql_where=text("parcel_id IS NOT NULL"),
+            sqlite_where=text("parcel_id IS NOT NULL"),
+        ),
+    )
+
+    def to_domain(self):
+        from app.document_integrity.models import DocumentHash
+
+        return DocumentHash(
+            document_id=self.document_id,
+            parcel_id=self.parcel_id,
+            document_name=self.document_name,
+            document_hash=self.document_hash,
+            uploaded_by=self.uploaded_by,
+            uploaded_at=self.uploaded_at,
+            verification_count=self.verification_count,
+            last_verified_at=self.last_verified_at,
+            last_verification_status=(
+                DocumentVerificationStatus(self.last_verification_status)
+                if self.last_verification_status is not None
+                else None
+            ),
         )

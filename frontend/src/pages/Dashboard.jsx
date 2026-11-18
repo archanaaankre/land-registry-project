@@ -84,8 +84,10 @@ export default function Dashboard() {
   useEffect(() => {
     const controller = new AbortController()
     async function loadDashboardData() {
-      await loadParcels(controller.signal)
-      await loadTransfers(controller.signal)
+      await Promise.all([
+        loadParcels(controller.signal),
+        loadTransfers(controller.signal),
+      ])
     }
     loadDashboardData()
     return () => controller.abort()

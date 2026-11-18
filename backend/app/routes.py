@@ -5,8 +5,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from app import db
 from app.auth.api_service import AuthApiService
 from app.auth.decorators import roles_required
-from app.auth.errors import InvalidInputError
+from app.auth.errors import (
+    AuthorizationError,
+    InvalidInputError,
+    ResourceNotFoundError,
+)
 from app.auth.user_management import AdminUserService
+from app.document_integrity.service import DocumentIntegrityService
 from app.models import Ownership, Parcel, Role, TransferRequest
 from app.registry.authorization import (
     OWNERSHIP_READ_ROLES,
@@ -30,6 +35,8 @@ from app.transfers.validation import (
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
+admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
+document_bp = Blueprint("document", __name__, url_prefix="/documents")
 
 
 def _auth_service():
@@ -57,6 +64,29 @@ def _json_body():
     if body is None:
         raise InvalidInputError("A valid JSON request body is required.")
     return body
+
+
+def _admin_service():
+    return _auth_service()
+
+
+def _document_service():
+    repository_bootstrap(current_app)
+    return DocumentIntegrityService(
+        current_app.config.get("DOCUMENT_HASH_REPOSITORY")
+    )
+
+
+def _user_response(user):
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role.value,
+        "is_active": user.is_active,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+    }
 
 
 def _parcel_service():
@@ -152,6 +182,11 @@ def login():
     Role.ADMIN,
 )
 def current_user():
+    repository = current_app.config.get("AUTH_USER_REPOSITORY")
+    if repository is not None:
+        user = repository.get_user_by_id(g.current_user_id)
+        if user is not None and not user.is_active:
+            raise AuthorizationError("Account is deactivated.")
     return jsonify(
         {
             "user": {
@@ -173,6 +208,7 @@ def create_admin_user():
 @roles_required(Role.ADMIN)
 def list_admin_users():
     users = _admin_user_service().list_users(
+        search=request.args.get("search"),
         role=request.args.get("role"),
         is_active=request.args.get("is_active"),
     )
@@ -452,4 +488,186 @@ def submit_transfer_to_blockchain(request_id):
     return jsonify({"transfer": _transfer_response(transfer)})
 
 
+# Single Admin user-management API is defined above on `bp` (Person 1's
+# guarded implementation). Person 2's duplicate /admin/users routes were
+# removed; only the statistics endpoint is retained here.
+@bp.route("/admin/stats", methods=["GET"])
+@roles_required(Role.ADMIN)
+def admin_stats():
+    service = _admin_service()
+    users = service.list_users()
+    user_counts = {}
+    for role in Role:
+        user_counts[role.value] = sum(1 for u in users if u.role == role)
+    active_users = sum(1 for u in users if u.is_active)
+    inactive_users = sum(1 for u in users if not u.is_active)
+
+    parcel_repository = current_app.config.get("PARCEL_REPOSITORY")
+    transfer_repository = current_app.config.get("TRANSFER_REPOSITORY")
+
+    parcel_count = 0
+    if parcel_repository is not None:
+        parcels = parcel_repository.list_parcels()
+        parcel_count = len(parcels)
+
+    transfer_count = 0
+    if transfer_repository is not None:
+        transfers = transfer_repository.list_all()
+        transfer_count = len(transfers)
+
+    return jsonify({
+        "users": {
+            "total": len(users),
+            "active": active_users,
+            "inactive": inactive_users,
+            "by_role": user_counts,
+        },
+        "parcels": {"total": parcel_count},
+        "transfers": {"total": transfer_count},
+    })
+
+
+@document_bp.route("/hash", methods=["POST"])
+@roles_required(Role.CITIZEN, Role.REGISTRAR, Role.ADMIN, Role.VERIFICATION_OFFICER)
+def store_document_hash():
+    """Calculate and store the trusted SHA-256 hash of a document.
+
+    Expects a multipart/form-data request with:
+    - document: the file to hash
+    - document_name: human-readable name of the document
+    - parcel_id: optional parcel ID the document relates to
+    """
+    service = _document_service()
+    if "document" not in request.files:
+        raise InvalidInputError(
+            "A document file is required.", field="document"
+        )
+    uploaded_file = request.files["document"]
+    if uploaded_file.filename == "":
+        raise InvalidInputError(
+            "A document file is required.", field="document"
+        )
+    document_name = request.form.get("document_name", "")
+    if not document_name:
+        raise InvalidInputError(
+            "A document name is required.", field="document_name"
+        )
+    parcel_id = request.form.get("parcel_id") or None
+    document_content = uploaded_file.read()
+    document = service.store_document_hash(
+        document_name=document_name,
+        document_content=document_content,
+        uploaded_by=g.current_user_id,
+        parcel_id=parcel_id,
+    )
+    return jsonify({
+        "document": {
+            "document_id": document.document_id,
+            "document_name": document.document_name,
+            "document_hash": document.document_hash,
+            "parcel_id": document.parcel_id,
+            "uploaded_by": document.uploaded_by,
+            "uploaded_at": document.uploaded_at.isoformat(),
+            "verification_count": document.verification_count,
+        }
+    }), 201
+
+
+@document_bp.route("/<document_id>/verify", methods=["POST"])
+@roles_required(Role.CITIZEN, Role.REGISTRAR, Role.ADMIN, Role.VERIFICATION_OFFICER)
+def verify_document(document_id):
+    """Verify a document against its trusted stored SHA-256 hash.
+
+    Expects a multipart/form-data request with:
+    - document: the file to verify
+    """
+    service = _document_service()
+    if "document" not in request.files:
+        raise InvalidInputError(
+            "A document file is required.", field="document"
+        )
+    uploaded_file = request.files["document"]
+    document_content = uploaded_file.read()
+    result = service.verify_document(document_id, document_content)
+    return jsonify({
+        "verification": {
+            "document_id": result.document_id,
+            "document_name": result.document_name,
+            "document_hash": result.document_hash,
+            "calculated_hash": result.calculated_hash,
+            "status": result.status.value,
+            "match": result.match,
+            "verified_at": result.verified_at.isoformat(),
+            "parcel_id": result.parcel_id,
+            "failure_reason": result.failure_reason,
+        }
+    })
+
+
+@document_bp.route("", methods=["GET"])
+@roles_required(Role.CITIZEN, Role.REGISTRAR, Role.ADMIN, Role.VERIFICATION_OFFICER)
+def list_document_hashes():
+    """List stored document hashes, optionally filtered by parcel."""
+    service = _document_service()
+    parcel_id = request.args.get("parcel_id") or None
+    documents = service.get_verification_history(parcel_id=parcel_id)
+    return jsonify({
+        "documents": [
+            {
+                "document_id": d.document_id,
+                "document_name": d.document_name,
+                "document_hash": d.document_hash,
+                "parcel_id": d.parcel_id,
+                "uploaded_by": d.uploaded_by,
+                "uploaded_at": d.uploaded_at.isoformat(),
+                "verification_count": d.verification_count,
+                "last_verified_at": (
+                    d.last_verified_at.isoformat()
+                    if d.last_verified_at is not None
+                    else None
+                ),
+                "last_verification_status": (
+                    d.last_verification_status.value
+                    if d.last_verification_status is not None
+                    else None
+                ),
+            }
+            for d in documents
+        ]
+    })
+
+
+@document_bp.route("/<document_id>", methods=["GET"])
+@roles_required(Role.CITIZEN, Role.REGISTRAR, Role.ADMIN, Role.VERIFICATION_OFFICER)
+def get_document_hash(document_id):
+    """Get a single stored document hash by ID."""
+    service = _document_service()
+    document = service.get_document_hash(document_id)
+    if document is None:
+        raise ResourceNotFoundError("Document hash was not found.")
+    return jsonify({
+        "document": {
+            "document_id": document.document_id,
+            "document_name": document.document_name,
+            "document_hash": document.document_hash,
+            "parcel_id": document.parcel_id,
+            "uploaded_by": document.uploaded_by,
+            "uploaded_at": document.uploaded_at.isoformat(),
+            "verification_count": document.verification_count,
+            "last_verified_at": (
+                document.last_verified_at.isoformat()
+                if document.last_verified_at is not None
+                else None
+            ),
+            "last_verification_status": (
+                document.last_verification_status.value
+                if document.last_verification_status is not None
+                else None
+            ),
+        }
+    })
+
+
 bp.register_blueprint(auth_bp)
+bp.register_blueprint(admin_bp)
+bp.register_blueprint(document_bp)

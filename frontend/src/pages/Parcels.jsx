@@ -38,7 +38,11 @@ export default function Parcels() {
     const controller = new AbortController()
 
     listParcels({ signal: controller.signal })
-      .then(setParcels)
+      .then((items) => {
+        if (!controller.signal.aborted) {
+          setParcels(items)
+        }
+      })
       .catch((requestError) => {
         if (requestError.name === 'AbortError') {
           return

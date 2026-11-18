@@ -158,8 +158,8 @@ export default function EvaluationDashboard() {
         />
       </section>
 
-      <TamperDetectionChart />
-      <DocumentIntegrityChart />
+      <TamperDetectionChart token={getAccessToken()} />
+      <DocumentIntegrityChart token={getAccessToken()} />
       <AccessControlSummary summary={accessControl} />
       <OwnershipTimeline
         data={traceability}
