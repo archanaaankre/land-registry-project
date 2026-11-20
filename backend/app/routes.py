@@ -1,4 +1,4 @@
-from flask import Blueprint, current_app, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request, Response
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -8,6 +8,7 @@ from app.auth.decorators import roles_required
 from app.auth.errors import (
     AuthorizationError,
     InvalidInputError,
+    PayloadTooLargeError,
     ResourceNotFoundError,
 )
 from app.auth.user_management import AdminUserService
@@ -73,8 +74,37 @@ def _admin_service():
 def _document_service():
     repository_bootstrap(current_app)
     return DocumentIntegrityService(
-        current_app.config.get("DOCUMENT_HASH_REPOSITORY")
+        current_app.config.get("DOCUMENT_HASH_REPOSITORY"),
+        current_app.config.get("OWNERSHIP_REPOSITORY"),
+        supporting_document_repository=current_app.config.get(
+            "DOCUMENT_SUPPORTING_REPOSITORY"
+        ),
+        transfer_repository=current_app.config.get("TRANSFER_REPOSITORY"),
     )
+
+
+def _read_uploaded_document(uploaded_file):
+    """Read an uploaded document in bounded chunks.
+
+    The size cap is enforced while streaming so an oversized upload never has
+    to be materialised in memory first. Oversized requests receive the same
+    structured AuthError JSON response as other API failures.
+    """
+    max_bytes = current_app.config.get("MAX_DOCUMENT_UPLOAD_BYTES", 10 * 1024 * 1024)
+    if not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes <= 0:
+        max_bytes = 10 * 1024 * 1024
+
+    chunks = []
+    total = 0
+    while True:
+        chunk = uploaded_file.stream.read(min(64 * 1024, max_bytes + 1 - total))
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise PayloadTooLargeError()
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _user_response(user):
@@ -417,7 +447,7 @@ def cancel_transfer(request_id):
     body = request.get_json(silent=True)
     validated = validate_review_decision(body if body is not None else {})
     transfer = service.cancel_request(
-        g.current_user_id, request_id, validated["reason"]
+        g.current_user_id, g.current_user_role, request_id, validated["reason"]
     )
     return jsonify({"transfer": _transfer_response(transfer)})
 
@@ -451,7 +481,7 @@ def approve_transfer(request_id):
     body = request.get_json(silent=True)
     validated = validate_review_decision(body if body is not None else {})
     transfer = service.approve_request(
-        g.current_user_id, request_id, validated["reason"]
+        g.current_user_id, g.current_user_role, request_id, validated["reason"]
     )
     return jsonify({"transfer": _transfer_response(transfer)})
 
@@ -464,7 +494,7 @@ def reject_transfer(request_id):
     body = _json_body()
     validated = validate_review_decision(body, require_reason=True)
     transfer = service.reject_request(
-        g.current_user_id, request_id, validated["reason"]
+        g.current_user_id, g.current_user_role, request_id, validated["reason"]
     )
     return jsonify({"transfer": _transfer_response(transfer)})
 
@@ -527,8 +557,57 @@ def admin_stats():
     })
 
 
+def _supporting_document_response(document):
+    return {
+        "supporting_document_id": document.supporting_document_id,
+        "document_name": document.document_name,
+        "document_hash": document.document_hash,
+        "parcel_id": document.parcel_id,
+        "transfer_request_id": document.transfer_request_id,
+        "content_type": document.content_type,
+        "uploaded_by": document.uploaded_by,
+        "uploaded_at": document.uploaded_at.isoformat(),
+    }
+
+
+@document_bp.route("/upload", methods=["POST"])
+@roles_required(Role.REGISTRAR, Role.VERIFICATION_OFFICER, Role.CITIZEN)
+def upload_supporting_document():
+    """Persist a supporting document without creating a trusted baseline.
+
+    Accepts multipart/form-data with:
+    - document: the file to persist
+    - document_name: human-readable name
+    - parcel_id: optional parcel association
+    - transfer_request_id: optional transfer request association
+    - content_type: optional validated client-declared content type
+    """
+    service = _document_service()
+    if "document" not in request.files:
+        raise InvalidInputError("A document file is required.", field="document")
+    uploaded_file = request.files["document"]
+    if uploaded_file.filename == "":
+        raise InvalidInputError("A document file is required.", field="document")
+    document_name = request.form.get("document_name", "")
+    if not document_name:
+        raise InvalidInputError("A document name is required.", field="document_name")
+    document_content = _read_uploaded_document(uploaded_file)
+    document = service.upload_supporting_document(
+        document_name=document_name,
+        document_content=document_content,
+        parcel_id=request.form.get("parcel_id") or None,
+        transfer_request_id=request.form.get("transfer_request_id") or None,
+        content_type=request.form.get("content_type") or uploaded_file.content_type,
+        uploaded_by=g.current_user_id,
+        actor_role=g.current_user_role,
+    )
+    upload = _supporting_document_response(document)
+    upload["calculated_hash"] = document.document_hash
+    return jsonify({"upload": upload})
+
+
 @document_bp.route("/hash", methods=["POST"])
-@roles_required(Role.CITIZEN, Role.REGISTRAR, Role.ADMIN, Role.VERIFICATION_OFFICER)
+@roles_required(Role.REGISTRAR)
 def store_document_hash():
     """Calculate and store the trusted SHA-256 hash of a document.
 
@@ -553,12 +632,13 @@ def store_document_hash():
             "A document name is required.", field="document_name"
         )
     parcel_id = request.form.get("parcel_id") or None
-    document_content = uploaded_file.read()
+    document_content = _read_uploaded_document(uploaded_file)
     document = service.store_document_hash(
         document_name=document_name,
         document_content=document_content,
         uploaded_by=g.current_user_id,
         parcel_id=parcel_id,
+        actor_role=g.current_user_role,
     )
     return jsonify({
         "document": {
@@ -587,8 +667,13 @@ def verify_document(document_id):
             "A document file is required.", field="document"
         )
     uploaded_file = request.files["document"]
-    document_content = uploaded_file.read()
-    result = service.verify_document(document_id, document_content)
+    document_content = _read_uploaded_document(uploaded_file)
+    result = service.verify_document(
+        document_id,
+        document_content,
+        actor_id=g.current_user_id,
+        actor_role=g.current_user_role,
+    )
     return jsonify({
         "verification": {
             "document_id": result.document_id,
@@ -610,7 +695,11 @@ def list_document_hashes():
     """List stored document hashes, optionally filtered by parcel."""
     service = _document_service()
     parcel_id = request.args.get("parcel_id") or None
-    documents = service.get_verification_history(parcel_id=parcel_id)
+    documents = service.get_verification_history(
+        parcel_id=parcel_id,
+        actor_id=g.current_user_id,
+        actor_role=g.current_user_role,
+    )
     return jsonify({
         "documents": [
             {
@@ -642,7 +731,11 @@ def list_document_hashes():
 def get_document_hash(document_id):
     """Get a single stored document hash by ID."""
     service = _document_service()
-    document = service.get_document_hash(document_id)
+    document = service.get_document_hash(
+        document_id,
+        actor_id=g.current_user_id,
+        actor_role=g.current_user_role,
+    )
     if document is None:
         raise ResourceNotFoundError("Document hash was not found.")
     return jsonify({
@@ -666,6 +759,61 @@ def get_document_hash(document_id):
             ),
         }
     })
+
+
+@document_bp.route("/supporting", methods=["GET"])
+@roles_required(Role.CITIZEN, Role.REGISTRAR, Role.ADMIN, Role.VERIFICATION_OFFICER)
+def list_supporting_documents():
+    """List supporting documents visible to the actor, optionally by parcel."""
+    service = _document_service()
+    documents = service.list_supporting_documents(
+        actor_id=g.current_user_id,
+        actor_role=g.current_user_role,
+        parcel_id=request.args.get("parcel_id") or None,
+    )
+    return jsonify(
+        {"documents": [_supporting_document_response(doc) for doc in documents]}
+    )
+
+
+@document_bp.route("/supporting/<supporting_document_id>", methods=["GET"])
+@roles_required(Role.CITIZEN, Role.REGISTRAR, Role.ADMIN, Role.VERIFICATION_OFFICER)
+def get_supporting_document(supporting_document_id):
+    """Get a single supporting document's metadata by ID."""
+    service = _document_service()
+    document = service.get_supporting_document(
+        supporting_document_id,
+        actor_id=g.current_user_id,
+        actor_role=g.current_user_role,
+    )
+    if document is None:
+        raise ResourceNotFoundError("Supporting document was not found.")
+    return jsonify({"document": _supporting_document_response(document)})
+
+
+@document_bp.route(
+    "/supporting/<supporting_document_id>/download", methods=["GET"]
+)
+@roles_required(Role.CITIZEN, Role.REGISTRAR, Role.ADMIN, Role.VERIFICATION_OFFICER)
+def download_supporting_document(supporting_document_id):
+    """Download the stored content of a supporting document."""
+    service = _document_service()
+    document = service.get_supporting_document(
+        supporting_document_id,
+        actor_id=g.current_user_id,
+        actor_role=g.current_user_role,
+    )
+    if document is None:
+        raise ResourceNotFoundError("Supporting document was not found.")
+    filename = f"{document.supporting_document_id}.bin"
+    return Response(
+        document.data,
+        mimetype=document.content_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 bp.register_blueprint(auth_bp)

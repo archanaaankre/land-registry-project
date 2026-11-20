@@ -34,6 +34,26 @@ class DocumentHash:
 
 
 @dataclass(frozen=True)
+class SupportingDocument:
+    """A supporting document persisted with its content for later review.
+
+    Supports two optional associations: ``parcel_id`` and
+    ``transfer_request_id``. When both are set, the transfer request must
+    belong to the same parcel.
+    """
+
+    supporting_document_id: str
+    parcel_id: str | None
+    transfer_request_id: str | None
+    document_name: str
+    document_hash: str  # SHA-256 hex digest of the stored content
+    data: bytes
+    content_type: str | None
+    uploaded_by: str
+    uploaded_at: datetime
+
+
+@dataclass(frozen=True)
 class DocumentVerificationResult:
     """Result of verifying a document against its trusted hash."""
 

@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -16,7 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app import db
-from app.document_integrity.models import DocumentVerificationStatus
+from app.document_integrity.models import DocumentVerificationStatus, SupportingDocument
 from app.models import (
     AreaUnit,
     BlockchainSubmissionStatus,
@@ -312,4 +313,51 @@ class DocumentHashModel(db.Model):
                 if self.last_verification_status is not None
                 else None
             ),
+        )
+
+
+class SupportingDocumentModel(db.Model):
+    """A supporting document persisted with its content for later review.
+
+    Supports two optional associations: ``parcel_id`` and
+    ``transfer_request_id``. Association consistency (matching parcel,
+    existence of the request) is validated in the service layer; the foreign
+    keys enforce referential integrity at the database level. No uniqueness
+    constraint on ``document_name``/``parcel_id`` is applied — multiple
+    supporting documents with the same name are allowed.
+    """
+
+    __tablename__ = "supporting_documents"
+
+    supporting_document_id: Mapped[str] = mapped_column(
+        String(64), primary_key=True
+    )
+    parcel_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("parcels.parcel_id"), nullable=True, index=True
+    )
+    transfer_request_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("transfer_requests.request_id"), nullable=True, index=True
+    )
+    document_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    document_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    uploaded_by: Mapped[str] = mapped_column(
+        String(128), ForeignKey("users.id"), nullable=False, index=True
+    )
+    uploaded_at: Mapped[object] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    def to_domain(self):
+        return SupportingDocument(
+            supporting_document_id=self.supporting_document_id,
+            parcel_id=self.parcel_id,
+            transfer_request_id=self.transfer_request_id,
+            document_name=self.document_name,
+            document_hash=self.document_hash,
+            data=self.data,
+            content_type=self.content_type,
+            uploaded_by=self.uploaded_by,
+            uploaded_at=self.uploaded_at,
         )

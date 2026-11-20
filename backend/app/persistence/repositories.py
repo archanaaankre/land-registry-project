@@ -24,6 +24,7 @@ from app.persistence.models import (
     DocumentHashModel,
     OwnershipModel,
     ParcelModel,
+    SupportingDocumentModel,
     TransferAuditEventModel,
     TransferRequestModel,
     UserModel,
@@ -1043,6 +1044,8 @@ def repository_bootstrap(app):
         app.config["TRANSFER_REPOSITORY"] = SqlAlchemyTransferRepository()
     if app.config.get("DOCUMENT_HASH_REPOSITORY") is None:
         app.config["DOCUMENT_HASH_REPOSITORY"] = SqlAlchemyDocumentHashRepository()
+    if app.config.get("DOCUMENT_SUPPORTING_REPOSITORY") is None:
+        app.config["DOCUMENT_SUPPORTING_REPOSITORY"] = SqlAlchemySupportingDocumentRepository()
     if app.config.get("BLOCKCHAIN_GATEWAY") is None:
         # Honest default until Person 1 injects the real integration gateway.
         from app.transfers.blockchain import UnavailableBlockchainGateway
@@ -1106,5 +1109,40 @@ class SqlAlchemyDocumentHashRepository:
             query = query.filter_by(parcel_id=parcel_id)
         models = _query(
             lambda: query.order_by(DocumentHashModel.uploaded_at.desc()).all()
+        )
+        return [model.to_domain() for model in models]
+
+
+class SqlAlchemySupportingDocumentRepository:
+    """Persistence layer for stored supporting documents."""
+
+    def create_supporting_document(self, document):
+        model = SupportingDocumentModel(
+            supporting_document_id=document.supporting_document_id,
+            parcel_id=document.parcel_id,
+            transfer_request_id=document.transfer_request_id,
+            document_name=document.document_name,
+            document_hash=document.document_hash,
+            data=document.data,
+            content_type=document.content_type,
+            uploaded_by=document.uploaded_by,
+            uploaded_at=document.uploaded_at,
+        )
+        db.session.add(model)
+        _commit()
+        return model.to_domain()
+
+    def find_by_id(self, supporting_document_id):
+        model = _query(
+            lambda: db.session.get(SupportingDocumentModel, supporting_document_id)
+        )
+        return model.to_domain() if model is not None else None
+
+    def list_supporting_documents(self, *, parcel_id=None):
+        query = SupportingDocumentModel.query
+        if parcel_id is not None:
+            query = query.filter_by(parcel_id=parcel_id)
+        models = _query(
+            lambda: query.order_by(SupportingDocumentModel.uploaded_at.desc()).all()
         )
         return [model.to_domain() for model in models]

@@ -2,8 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth.js'
 import {
+  downloadSupportingDocument,
   listDocumentHashes,
+  listSupportingDocuments,
   storeDocumentHash,
+  uploadSupportingDocument,
   verifyDocument,
 } from '../services/documentService.js'
 import PageHeader from '../components/layout/PageHeader.jsx'
@@ -17,14 +20,25 @@ function formatTimestamp(value) {
 }
 
 export default function DocumentIntegrity() {
-  const { logout } = useAuth()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [documents, setDocuments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
 
-  // Upload/store form state
+  const canCreateTrustedHash = user?.role === 'REGISTRAR'
+  const canUploadSupporting = ['REGISTRAR', 'VERIFICATION_OFFICER', 'CITIZEN'].includes(user?.role)
+
+  // Supporting-document upload form state
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [uploadFile, setUploadFile] = useState(null)
+  const [uploadDocumentName, setUploadDocumentName] = useState('')
+  const [uploadError, setUploadError] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [uploadResult, setUploadResult] = useState(null)
+
+  // Trusted-hash form state
   const [storeOpen, setStoreOpen] = useState(false)
   const [storeFile, setStoreFile] = useState(null)
   const [storeDocumentName, setStoreDocumentName] = useState('')
@@ -39,6 +53,12 @@ export default function DocumentIntegrity() {
   const [verifyError, setVerifyError] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [verificationResult, setVerificationResult] = useState(null)
+
+  // Supporting-documents review state
+  const [supportingDocuments, setSupportingDocuments] = useState([])
+  const [supportingLoading, setSupportingLoading] = useState(true)
+  const [supportingError, setSupportingError] = useState('')
+  const [downloadingDocId, setDownloadingDocId] = useState('')
 
   const loadDocuments = useCallback(async (signal) => {
     setLoading(true)
@@ -79,6 +99,46 @@ export default function DocumentIntegrity() {
     load()
     return () => controller.abort()
   }, [loadDocuments, reloadKey])
+
+  const loadSupportingDocuments = useCallback(async (signal) => {
+    setSupportingLoading(true)
+    setSupportingError('')
+    try {
+      const { data } = await listSupportingDocuments({ signal })
+      if (!signal.aborted) {
+        setSupportingDocuments(data.documents ?? [])
+      }
+    } catch (requestError) {
+      if (requestError.name === 'AbortError' || signal.aborted) {
+        return
+      }
+      if (requestError.status === 401) {
+        logout()
+        navigate('/login', { replace: true })
+        return
+      }
+      if (!signal.aborted) {
+        setSupportingDocuments([])
+        setSupportingError(
+          requestError.message ||
+            'We couldn’t load supporting documents. Please try again.',
+        )
+      }
+    } finally {
+      if (!signal.aborted) {
+        setSupportingLoading(false)
+      }
+    }
+  }, [logout, navigate])
+
+  useEffect(() => {
+    async function load() {
+      await loadSupportingDocuments(controller.signal)
+    }
+    const controller = new AbortController()
+    load()
+    return () => controller.abort()
+  }, [loadSupportingDocuments, reloadKey])
 
   function reloadDocuments() {
     setError('')
@@ -123,6 +183,55 @@ export default function DocumentIntegrity() {
     }
   }
 
+  async function handleUploadDocument(event) {
+    event.preventDefault()
+    if (uploading) return
+    if (!uploadFile || !uploadDocumentName.trim()) {
+      setUploadError('Please select a document and enter a name.')
+      return
+    }
+    setUploading(true)
+    setUploadError('')
+    const formData = new FormData()
+    formData.append('document', uploadFile)
+    formData.append('document_name', uploadDocumentName.trim())
+    try {
+      const { data } = await uploadSupportingDocument(formData)
+      setUploadResult(data.upload)
+      setUploadFile(null)
+      setUploadDocumentName('')
+      setUploadOpen(false)
+    } catch (requestError) {
+      setUploadError(
+        requestError.message || 'The supporting document could not be uploaded. Please try again.',
+      )
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function handleDownloadSupportingDocument(documentId) {
+    setDownloadingDocId(documentId)
+    try {
+      const { data } = await downloadSupportingDocument(documentId)
+      const url = URL.createObjectURL(data.data)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = data.filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (requestError) {
+      setSupportingError(
+        requestError.message ||
+          'The supporting document could not be downloaded. Please try again.',
+      )
+    } finally {
+      setDownloadingDocId('')
+    }
+  }
+
   async function handleVerifyDocument(event) {
     event.preventDefault()
     if (verifying) return
@@ -151,7 +260,7 @@ export default function DocumentIntegrity() {
     <main className="registry-page">
       <PageHeader
         eyebrow="Document integrity"
-        intro="Upload documents to store their trusted SHA-256 hash, or verify a document against a stored hash."
+        intro="View stored document hashes, upload supporting documents, and verify documents against trusted hashes."
         title="Document Integrity"
       />
 
@@ -169,6 +278,15 @@ export default function DocumentIntegrity() {
           <p>
             Document hash stored successfully: <strong>{storedHash.document_name}</strong>
             ({storedHash.document_hash})
+          </p>
+        </section>
+      )}
+
+      {uploadResult && (
+        <section className="registry-state parcel-success" role="status">
+          <p>
+            Supporting document uploaded: <strong>{uploadResult.document_name}</strong>
+            {' '}(calculated hash: {uploadResult.calculated_hash}). This is not a trusted baseline.
           </p>
         </section>
       )}
@@ -193,6 +311,7 @@ export default function DocumentIntegrity() {
         </section>
       )}
 
+      {canCreateTrustedHash && (
       <section className="registry-panel" aria-labelledby="store-document-heading">
         <div className="registry-toolbar">
           <div>
@@ -266,6 +385,71 @@ export default function DocumentIntegrity() {
           </section>
         )}
       </section>
+      )}
+
+      {canUploadSupporting && (
+      <section className="registry-panel" aria-labelledby="upload-supporting-heading">
+        <div className="registry-toolbar">
+          <div>
+            <h2 id="upload-supporting-heading">Upload a supporting document</h2>
+            <p className="result-count">
+              Upload a document and calculate its SHA-256 hash without creating a trusted baseline.
+            </p>
+          </div>
+          <button
+            className="secondary-button"
+            onClick={() => setUploadOpen((open) => !open)}
+            type="button"
+          >
+            {uploadOpen ? 'Close form' : 'Upload supporting document'}
+          </button>
+        </div>
+
+        {uploadOpen && (
+          <section className="registry-state parcel-registration-form" aria-labelledby="upload-form-heading">
+            <h3 id="upload-form-heading">Supporting document</h3>
+            {uploadError && (
+              <p className="registry-state error-state" role="alert">{uploadError}</p>
+            )}
+            <form className="auth-form" onSubmit={handleUploadDocument}>
+              <label>
+                Document file
+                <input
+                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+                  onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
+                  required
+                  type="file"
+                />
+              </label>
+              <label>
+                Document name
+                <input
+                  autoComplete="off"
+                  maxLength={200}
+                  onChange={(event) => setUploadDocumentName(event.target.value)}
+                  required
+                  type="text"
+                  value={uploadDocumentName}
+                />
+              </label>
+              <div className="parcel-registration-actions">
+                <button className="primary-button" disabled={uploading} type="submit">
+                  {uploading ? 'Uploading…' : 'Upload document'}
+                </button>
+                <button
+                  className="secondary-button"
+                  disabled={uploading}
+                  onClick={() => setUploadOpen(false)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </section>
+        )}
+      </section>
+      )}
 
       <section className="registry-panel" aria-labelledby="verify-document-heading">
         <div className="registry-toolbar">
@@ -385,6 +569,100 @@ export default function DocumentIntegrity() {
             ))}
           </div>
         )}
+      </section>
+
+      <section
+        className="registry-panel"
+        aria-labelledby="supporting-documents-heading"
+      >
+        <div className="registry-toolbar">
+          <div>
+            <h2 id="supporting-documents-heading">Supporting documents</h2>
+            <p className="result-count">
+              Supporting documents stored for later review.
+            </p>
+          </div>
+          <button
+            className="secondary-button"
+            onClick={() => loadSupportingDocuments(new AbortController().signal)}
+            type="button"
+          >
+            Refresh
+          </button>
+        </div>
+
+        {supportingLoading && (
+          <p className="registry-state" role="status">
+            Loading supporting documents…
+          </p>
+        )}
+        {supportingError && (
+          <p className="registry-state error-state" role="alert">
+            {supportingError}
+          </p>
+        )}
+        {!supportingLoading &&
+          !supportingError &&
+          supportingDocuments.length === 0 && (
+            <p className="registry-state">
+              No supporting documents are visible.
+            </p>
+          )}
+        {!supportingLoading &&
+          !supportingError &&
+          supportingDocuments.length > 0 && (
+            <div className="ownership-list">
+              {supportingDocuments.map((doc) => (
+                <article
+                  className="ownership-record"
+                  key={doc.supporting_document_id}
+                >
+                  <dl>
+                    <div>
+                      <dt>Document</dt>
+                      <dd>{doc.document_name}</dd>
+                    </div>
+                    <div>
+                      <dt>Supporting document ID</dt>
+                      <dd>{doc.supporting_document_id}</dd>
+                    </div>
+                    <div>
+                      <dt>SHA-256</dt>
+                      <dd>{doc.document_hash}</dd>
+                    </div>
+                    <div>
+                      <dt>Parcel ID</dt>
+                      <dd>{doc.parcel_id || 'Not specified'}</dd>
+                    </div>
+                    <div>
+                      <dt>Transfer request</dt>
+                      <dd>{doc.transfer_request_id || 'Not specified'}</dd>
+                    </div>
+                    <div>
+                      <dt>Uploaded by</dt>
+                      <dd>{doc.uploaded_by}</dd>
+                    </div>
+                    <div>
+                      <dt>Uploaded at</dt>
+                      <dd>{formatTimestamp(doc.uploaded_at)}</dd>
+                    </div>
+                  </dl>
+                  <button
+                    className="secondary-button"
+                    disabled={downloadingDocId === doc.supporting_document_id}
+                    onClick={() =>
+                      handleDownloadSupportingDocument(doc.supporting_document_id)
+                    }
+                    type="button"
+                  >
+                    {downloadingDocId === doc.supporting_document_id
+                      ? 'Downloading…'
+                      : 'Download'}
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
       </section>
     </main>
   )
