@@ -130,3 +130,8 @@ class Config:
         "DATABASE_URL", "postgresql://localhost:5432/land_registry"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Upper bound for a single uploaded document, in bytes. Large uploads are
+    # rejected by the API before their contents are read into memory.
+    MAX_DOCUMENT_UPLOAD_BYTES = int(
+        _get_env("MAX_DOCUMENT_UPLOAD_BYTES", str(10 * 1024 * 1024))
+    )

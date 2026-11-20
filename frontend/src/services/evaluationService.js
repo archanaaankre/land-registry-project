@@ -170,14 +170,38 @@ export const ACCESS_CONTROL_POLICY = {
     {
       key: 'view-parcels',
       label: 'View parcels and parcel details',
-      allowedRoles: ['CITIZEN', 'REGISTRAR', 'ADMIN'],
-      notes: 'GET /api/parcels and GET /api/parcels/:parcelId use PARCEL_READ_ROLES.',
+      allowedRoles: ['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER', 'ADMIN'],
+      notes: 'GET /api/parcels and GET /api/parcels/:parcelId use PARCEL_READ_ROLES, which includes VERIFICATION_OFFICER.',
     },
     {
       key: 'view-ownership',
       label: 'View ownership records for a parcel',
-      allowedRoles: ['CITIZEN', 'REGISTRAR', 'ADMIN'],
-      notes: 'GET /api/parcels/:parcelId/ownership uses OWNERSHIP_READ_ROLES.',
+      allowedRoles: ['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER', 'ADMIN'],
+      notes: 'GET /api/parcels/:parcelId/ownership uses OWNERSHIP_READ_ROLES, which includes VERIFICATION_OFFICER.',
+    },
+    {
+      key: 'view-transfers',
+      label: 'View transfer requests and audit history',
+      allowedRoles: ['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER', 'ADMIN'],
+      notes: 'GET /api/transfers and GET /api/transfers/:requestId use TRANSFER_READ_ROLES. Citizens only see requests where they are the seller or buyer; Verification Officers may view all requests but cannot approve or reject.',
+    },
+    {
+      key: 'upload-supporting-document',
+      label: 'Upload supporting documents (no trusted baseline)',
+      allowedRoles: ['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER'],
+      notes: 'POST /api/documents/upload returns a calculated SHA-256 hash but stores nothing. Administrators cannot upload supporting documents.',
+    },
+    {
+      key: 'create-trusted-hash',
+      label: 'Create/store trusted document hashes',
+      allowedRoles: ['REGISTRAR'],
+      notes: 'POST /api/documents/hash is Registrar-only. Verification Officers, Citizens and Administrators cannot establish trusted baselines.',
+    },
+    {
+      key: 'verify-documents',
+      label: 'Verify documents against stored SHA-256 hashes',
+      allowedRoles: ['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER', 'ADMIN'],
+      notes: 'POST /api/documents/:documentId/verify. Verification Officers and Administrators may verify any stored document; citizens may only verify documents they uploaded or that relate to parcels they actively own.',
     },
     {
       key: 'manage-parcels',

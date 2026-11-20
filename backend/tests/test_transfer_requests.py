@@ -611,11 +611,13 @@ def test_repeated_approval_is_idempotent(app, client):
     assert response.get_json()["transfer"]["status"] == "APPROVED"
 
 
-def test_transfer_read_roles_are_supported():
+def test_transfer_role_policy_supports_all_four_roles():
     assert set(TRANSFER_SUBMIT_ROLES) == {Role.CITIZEN}
     assert set(TRANSFER_READ_ROLES) == {
         Role.CITIZEN,
         Role.REGISTRAR,
+        Role.VERIFICATION_OFFICER,
         Role.ADMIN,
     }
+    # Verification Officers may read transfers but never approve or reject.
     assert set(TRANSFER_REVIEW_ROLES) == {Role.REGISTRAR}

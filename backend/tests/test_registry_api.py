@@ -308,10 +308,17 @@ def test_ownership_record_policy_allows_only_registrar():
     assert OWNERSHIP_RECORD_ROLES == (Role.REGISTRAR,)
 
 
-def test_read_role_policy_supports_citizen_registrar_and_admin():
-    existing_read_roles = {Role.CITIZEN, Role.REGISTRAR, Role.ADMIN}
-    assert set(PARCEL_READ_ROLES) == existing_read_roles
-    assert set(OWNERSHIP_READ_ROLES) == existing_read_roles
+def test_read_role_policy_supports_all_four_roles():
+    # Verification Officers may view registry records as part of their
+    # document-verification duties, but must not gain write authority.
+    read_roles = {
+        Role.CITIZEN,
+        Role.REGISTRAR,
+        Role.VERIFICATION_OFFICER,
+        Role.ADMIN,
+    }
+    assert set(PARCEL_READ_ROLES) == read_roles
+    assert set(OWNERSHIP_READ_ROLES) == read_roles
     assert PARCEL_MANAGE_ROLES == (Role.REGISTRAR,)
 
 

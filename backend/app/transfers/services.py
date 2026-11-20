@@ -228,7 +228,9 @@ class TransferService:
                 for record in [*records, *buyer_matches]
             }
             return list(unique.values())
-        if role in (Role.REGISTRAR, Role.ADMIN):
+        # Verification Officers may view transfer requests as part of their
+        # document-verification duties; they do not gain review powers here.
+        if role in (Role.REGISTRAR, Role.ADMIN, Role.VERIFICATION_OFFICER):
             try:
                 return repository.list_all()
             except AttributeError:
@@ -310,7 +312,13 @@ class TransferService:
                 return user.id
         return reference
 
-    def cancel_request(self, actor_id: str, request_id: str, reason: str | None = None):
+    def cancel_request(
+        self, actor_id: str, role: Role, request_id: str, reason: str | None = None
+    ):
+        # Defense in depth: only the seller (a citizen) may cancel, even if a
+        # future caller reaches this service without going through the route.
+        if role is not Role.CITIZEN:
+            raise AuthorizationError("Only the seller may cancel a transfer request.")
         repository = self._require_repository()
         validated_id = validate_identifier(request_id, "request_id")
         request = repository.find_by_id(validated_id)
@@ -404,7 +412,14 @@ class TransferService:
             updated, request.status, event
         )
 
-    def approve_request(self, registrar_id: str, request_id: str, reason: str | None = None):
+    def approve_request(
+        self, registrar_id: str, role: Role, request_id: str, reason: str | None = None
+    ):
+        # Defense in depth: approval authority belongs to the Registrar only.
+        # Verification Officers can view transfers and verify documents but
+        # cannot approve them, even if this service is called directly.
+        if role is not Role.REGISTRAR:
+            raise AuthorizationError("Only a registrar may approve transfers.")
         repository = self._require_repository()
         validated_id = validate_identifier(request_id, "request_id")
         request = repository.find_by_id(validated_id)
@@ -650,7 +665,12 @@ class TransferService:
             event=event,
         )
 
-    def reject_request(self, registrar_id: str, request_id: str, reason: str):
+    def reject_request(
+        self, registrar_id: str, role: Role, request_id: str, reason: str
+    ):
+        # Defense in depth: rejection authority belongs to the Registrar only.
+        if role is not Role.REGISTRAR:
+            raise AuthorizationError("Only a registrar may reject transfers.")
         repository = self._require_repository()
         validated_id = validate_identifier(request_id, "request_id")
         request = repository.find_by_id(validated_id)
@@ -682,7 +702,7 @@ class TransferService:
         return repository.save_request_with_audit(updated, request.status, event)
 
     def _can_read(self, actor_id: str, role: Role, request: TransferRequest) -> bool:
-        if role in (Role.REGISTRAR, Role.ADMIN):
+        if role in (Role.REGISTRAR, Role.ADMIN, Role.VERIFICATION_OFFICER):
             return True
         if request.seller_id == actor_id:
             return True

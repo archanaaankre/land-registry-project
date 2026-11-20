@@ -3,6 +3,7 @@ export const NAV_ITEMS = [
   { to: '/parcels', label: 'Land Records', roles: ['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER', 'ADMIN'] },
   { to: '/transfers', label: 'My Transfers', roles: ['CITIZEN'] },
   { to: '/registrar/transfers', label: 'Transfer Review', roles: ['REGISTRAR'] },
+  { to: '/registrar/ownership', label: 'Record Ownership', roles: ['REGISTRAR'] },
   { to: '/documents/integrity', label: 'Document Integrity', roles: ['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER', 'ADMIN'] },
   { to: '/documents/tamper', label: 'Tamper Detection', roles: ['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER', 'ADMIN'] },
   { to: '/evaluation', label: 'Evaluation', roles: ['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER', 'ADMIN'] },

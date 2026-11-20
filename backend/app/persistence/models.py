@@ -361,3 +361,73 @@ class SupportingDocumentModel(db.Model):
             uploaded_by=self.uploaded_by,
             uploaded_at=self.uploaded_at,
         )
+
+
+class AdminAuditEventModel(db.Model):
+    """Durable audit trail for admin user-management actions.
+
+    Rows are written by the SQLAlchemy user repository inside the same
+    transaction as the admin mutation. FKs use ON DELETE SET NULL so
+    deleting a user preserves historical audit records (with actor/target
+    ids nulled, never with personal data fabricated).
+    """
+
+    __tablename__ = "admin_audit_events"
+
+    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    actor_id: Mapped[str | None] = mapped_column(
+        String(128),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    actor_role: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_user_id: Mapped[str | None] = mapped_column(
+        String(128),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    from_role: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    to_role: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[object] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('USER_CREATED','USER_ROLE_CHANGED','USER_ACTIVATED','USER_DEACTIVATED')",
+            name="admin_audit_events_event_type",
+        ),
+        CheckConstraint(
+            "actor_role IN ('CITIZEN','REGISTRAR','ADMIN','VERIFICATION_OFFICER')",
+            name="admin_audit_events_actor_role",
+        ),
+        CheckConstraint(
+            "from_role IS NULL OR from_role IN ('CITIZEN','REGISTRAR','ADMIN','VERIFICATION_OFFICER')",
+            name="admin_audit_events_from_role",
+        ),
+        CheckConstraint(
+            "to_role IS NULL OR to_role IN ('CITIZEN','REGISTRAR','ADMIN','VERIFICATION_OFFICER')",
+            name="admin_audit_events_to_role",
+        ),
+    )
+
+    def to_domain(self):
+        from app.auth.audit import AdminAuditEvent
+
+        detail = {}
+        if self.from_role is not None:
+            detail["from_role"] = self.from_role
+        if self.to_role is not None:
+            detail["to_role"] = self.to_role
+        return AdminAuditEvent(
+            event_id=self.event_id,
+            event_type=self.event_type,
+            actor_id=self.actor_id or "",
+            actor_role=Role(self.actor_role),
+            target_user_id=self.target_user_id or "",
+            created_at=self.created_at,
+            detail=detail,
+        )

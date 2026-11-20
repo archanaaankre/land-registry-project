@@ -386,7 +386,9 @@ def _pending_transfer(app, seed):
     with app.app_context():
         service = _transfer_service(app, StubBlockchainGateway(seed.parcel_id))
         transfer = _submit_operation(app, seed)()
-        service.approve_request(seed.registrar.id, transfer.request_id)
+        service.approve_request(
+            seed.registrar.id, Role.REGISTRAR, transfer.request_id
+        )
         submitted = service.submit_to_blockchain(
             seed.registrar.id, Role.REGISTRAR, transfer.request_id
         )
@@ -588,7 +590,7 @@ def test_concurrent_cancellations_record_single_audit_event(pg_app):
     def cancel():
         def operation():
             return _transfer_service(app).cancel_request(
-                seed.seller.id, request_id, "concurrent cancel"
+                seed.seller.id, Role.CITIZEN, request_id, "concurrent cancel"
             )
 
         return operation
@@ -616,7 +618,7 @@ def test_concurrent_approvals_record_single_audit_event(pg_app):
     def approve():
         def operation():
             return _transfer_service(app).approve_request(
-                seed.registrar.id, request_id
+                seed.registrar.id, Role.REGISTRAR, request_id
             )
 
         return operation
@@ -672,7 +674,7 @@ def test_concurrent_cancel_and_approve_produce_single_valid_outcome(pg_app):
     def cancel():
         def operation():
             return _transfer_service(app).cancel_request(
-                seed.seller.id, request_id, "concurrent cancel"
+                seed.seller.id, Role.CITIZEN, request_id, "concurrent cancel"
             )
 
         return operation
@@ -680,7 +682,7 @@ def test_concurrent_cancel_and_approve_produce_single_valid_outcome(pg_app):
     def approve():
         def operation():
             return _transfer_service(app).approve_request(
-                seed.registrar.id, request_id
+                seed.registrar.id, Role.REGISTRAR, request_id
             )
 
         return operation

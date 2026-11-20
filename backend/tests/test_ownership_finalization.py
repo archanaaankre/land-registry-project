@@ -298,7 +298,7 @@ def _transfer(seed):
 
 def _approve(seed):
     return _service(seed, StubBlockchainGateway()).approve_request(
-        seed.registrar.id, seed.request_id
+        seed.registrar.id, Role.REGISTRAR, seed.request_id
     )
 
 

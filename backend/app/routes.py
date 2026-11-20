@@ -20,8 +20,14 @@ from app.registry.authorization import (
     PARCEL_MANAGE_ROLES,
     PARCEL_READ_ROLES,
 )
+from app.registry.merkle import (
+    generate_proof,
+    merkle_root,
+    sorted_leaves,
+    verify_merkle_proof,
+)
 from app.registry.services import OwnershipService, ParcelService
-from app.registry.validation import validate_parcel_search_data
+from app.registry.validation import validate_identifier, validate_parcel_search_data
 from app.persistence.repositories import repository_bootstrap
 from app.transfers.authorization import (
     TRANSFER_READ_ROLES,
@@ -230,7 +236,9 @@ def current_user():
 @bp.route("/admin/users", methods=["POST"])
 @roles_required(Role.ADMIN)
 def create_admin_user():
-    user = _admin_user_service().create_user(_json_body())
+    user = _admin_user_service().create_user(
+        _json_body(), actor_id=g.current_user_id, actor_role=g.current_user_role
+    )
     return jsonify({"user": user}), 201
 
 
@@ -254,14 +262,24 @@ def get_admin_user(user_id):
 @bp.route("/admin/users/<user_id>/role", methods=["PATCH"])
 @roles_required(Role.ADMIN)
 def update_admin_user_role(user_id):
-    user = _admin_user_service().update_role(user_id, _json_body())
+    user = _admin_user_service().update_role(
+        user_id,
+        _json_body(),
+        actor_id=g.current_user_id,
+        actor_role=g.current_user_role,
+    )
     return jsonify({"user": user})
 
 
 @bp.route("/admin/users/<user_id>/status", methods=["PATCH"])
 @roles_required(Role.ADMIN)
 def update_admin_user_status(user_id):
-    user = _admin_user_service().update_status(user_id, _json_body())
+    user = _admin_user_service().update_status(
+        user_id,
+        _json_body(),
+        actor_id=g.current_user_id,
+        actor_role=g.current_user_role,
+    )
     return jsonify({"user": user})
 
 
@@ -361,6 +379,103 @@ def create_ownership():
 def get_ownership(ownership_id):
     ownership = _ownership_service().get_ownership(ownership_id)
     return jsonify({"ownership": _ownership_response(ownership)})
+
+
+def _merkle_leaf_state(parcel_id):
+    """Return (sorted leaves, ordered records) for a parcel's ownership rows."""
+    records = _ownership_service().list_for_parcel(parcel_id)
+    ordered = sorted(records, key=lambda record: record.ownership_id)
+    return sorted_leaves(records), ordered
+
+
+def _find_ownership_index(ordered, ownership_id):
+    for index, record in enumerate(ordered):
+        if record.ownership_id == ownership_id:
+            return index
+    return None
+
+
+@bp.route("/parcels/<parcel_id>/ownership/merkle-root", methods=["GET"])
+@roles_required(*OWNERSHIP_READ_ROLES)
+def get_parcel_ownership_merkle_root(parcel_id):
+    leaves, _ordered = _merkle_leaf_state(parcel_id)
+    return jsonify(
+        {
+            "parcel_id": parcel_id,
+            "merkle_root": merkle_root(leaves),
+            "ownership_count": len(leaves),
+        }
+    )
+
+
+@bp.route("/parcels/<parcel_id>/ownership/proofs", methods=["POST"])
+@roles_required(*OWNERSHIP_READ_ROLES)
+def get_ownership_merkle_proof(parcel_id):
+    body = _json_body()
+    if not isinstance(body, dict):
+        raise InvalidInputError("A valid JSON request body is required.")
+    if not isinstance(body.get("ownership_id"), str):
+        raise InvalidInputError("Required fields are missing: ownership_id.")
+    ownership_id = validate_identifier(body["ownership_id"], "ownership_id")
+    leaves, ordered = _merkle_leaf_state(parcel_id)
+    index = _find_ownership_index(ordered, ownership_id)
+    if index is None:
+        raise ResourceNotFoundError("Ownership was not found.")
+    return jsonify(
+        {
+            "parcel_id": parcel_id,
+            "merkle_root": merkle_root(leaves),
+            "ownership_id": ownership_id,
+            "leaf": leaves[index],
+            "leaf_index": index,
+            "proof": generate_proof(leaves, index),
+        }
+    )
+
+
+@bp.route("/parcels/<parcel_id>/ownership/proof-verify", methods=["POST"])
+@roles_required(*OWNERSHIP_READ_ROLES)
+def verify_ownership_merkle_proof(parcel_id):
+    body = _json_body()
+    if not isinstance(body, dict):
+        raise InvalidInputError("A valid JSON request body is required.")
+    if not isinstance(body.get("ownership_id"), str):
+        raise InvalidInputError("Required fields are missing: ownership_id.")
+    ownership_id = validate_identifier(body["ownership_id"], "ownership_id")
+    leaves, ordered = _merkle_leaf_state(parcel_id)
+    index = _find_ownership_index(ordered, ownership_id)
+    if index is None:
+        raise ResourceNotFoundError("Ownership was not found.")
+    proof = body.get("proof")
+    if not isinstance(proof, list):
+        raise InvalidInputError(
+            "Invalid proof: expected a list of {hash, side} steps."
+        )
+    for step in proof:
+        if not isinstance(step, dict):
+            raise InvalidInputError("Invalid proof: steps must be objects.")
+        if not isinstance(step.get("hash"), str) or len(step["hash"]) != 64:
+            raise InvalidInputError(
+                "Invalid proof: each step requires a 64-character hex hash."
+            )
+        if step.get("side") not in ("left", "right"):
+            raise InvalidInputError(
+                "Invalid proof: each step requires side to be 'left' or 'right'."
+            )
+        if any(c not in "0123456789abcdef" for c in step["hash"]):
+            raise InvalidInputError("Invalid proof: hash must be lowercase hex.")
+    root = merkle_root(leaves)
+    valid = verify_merkle_proof(root, leaves[index], proof)
+    response = {
+        "valid": valid,
+        "merkle_root": root,
+        "parcel_id": parcel_id,
+        "ownership_id": ownership_id,
+        "leaf_index": index,
+    }
+    if not valid:
+        response["reason"] = "Merkle root mismatch."
+    return jsonify(response)
 
 
 def _transfer_response(transfer: TransferRequest):

@@ -21,6 +21,12 @@ class UnsupportedRoleError(AuthError):
     status_code = 400
 
 
+class PayloadTooLargeError(AuthError):
+    code = "payload_too_large"
+    message = "The uploaded document is too large."
+    status_code = 413
+
+
 class AuthorizationError(AuthError):
     code = "forbidden"
     message = "This role is not authorized."

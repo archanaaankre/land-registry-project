@@ -1,7 +1,15 @@
 from collections.abc import Mapping
 
+from app.auth.audit import (
+    EVENT_USER_ACTIVATED,
+    EVENT_USER_CREATED,
+    EVENT_USER_DEACTIVATED,
+    EVENT_USER_ROLE_CHANGED,
+    build_admin_audit_event,
+)
 from app.auth.errors import (
     AdminPromotionNotAllowedError,
+    AuthorizationError,
     InvalidInputError,
     ResourceNotFoundError,
     UnsupportedRoleError,
@@ -15,7 +23,7 @@ class AdminUserService:
     def __init__(self, repository):
         self._repository = repository
 
-    def create_user(self, data):
+    def create_user(self, data, *, actor_id=None, actor_role=None):
         if not isinstance(data, Mapping):
             raise InvalidInputError("Request body must be an object.")
         if "name" not in data:
@@ -36,11 +44,22 @@ class AdminUserService:
                 field="role",
             )
 
+        def _audit_factory(target_user_id):
+            return build_admin_audit_event(
+                EVENT_USER_CREATED,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                target_user_id=target_user_id,
+                detail={"role": validated["role"].value},
+            )
+
+        audit_factory = _audit_factory if actor_role is not None else None
         user = self._repository.create_user(
             name=name.strip(),
             email=validated["email"],
             password_hash=hash_password(validated["password"]),
             role=validated["role"],
+            audit_event_factory=audit_factory,
         )
         return _safe_user(user)
 
@@ -58,7 +77,7 @@ class AdminUserService:
             raise ResourceNotFoundError("User was not found.")
         return _safe_user(user)
 
-    def update_role(self, user_id, data):
+    def update_role(self, user_id, data, *, actor_id=None, actor_role=None):
         if not isinstance(data, Mapping):
             raise InvalidInputError("Request body must be an object.")
         if "role" not in data:
@@ -70,14 +89,30 @@ class AdminUserService:
         if role is Role.ADMIN:
             raise AdminPromotionNotAllowedError()
 
-        user = self._repository.update_user_role(
-            _validate_user_id(user_id), role
-        )
-        if user is None:
+        user_id = _validate_user_id(user_id)
+        repository = self._repository
+        existing = repository.get_user_by_id(user_id)
+        if existing is None:
             raise ResourceNotFoundError("User was not found.")
-        return _safe_user(user)
 
-    def update_status(self, user_id, data):
+        def _audit_factory(target_user_id):
+            return build_admin_audit_event(
+                EVENT_USER_ROLE_CHANGED,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                target_user_id=target_user_id,
+                detail={"from_role": existing.role.value, "to_role": role.value},
+            )
+
+        audit_factory = _audit_factory if actor_role is not None else None
+        updated = repository.update_user_role_with_admin_guard(
+            user_id, role, audit_event_factory=audit_factory
+        )
+        if updated is None:
+            raise ResourceNotFoundError("User was not found.")
+        return _safe_user(updated)
+
+    def update_status(self, user_id, data, *, actor_id=None, actor_role=None):
         if not isinstance(data, Mapping):
             raise InvalidInputError("Request body must be an object.")
         if "is_active" not in data:
@@ -88,12 +123,46 @@ class AdminUserService:
                 "is_active must be a boolean.", field="is_active"
             )
 
-        user = self._repository.update_user_status(
-            _validate_user_id(user_id), is_active
-        )
+        user_id = _validate_user_id(user_id)
+        repository = self._repository
+        user = repository.get_user_by_id(user_id)
         if user is None:
             raise ResourceNotFoundError("User was not found.")
-        return _safe_user(user)
+        if (
+            not is_active
+            and user.id == actor_id
+            and user.role is Role.ADMIN
+        ):
+            # Self-deactivation of an admin is blocked while other admins
+            # remain active. When this actor is the only active admin, the
+            # guarded mutation's last-active-Admin conflict (409) takes
+            # precedence, so both protections are preserved.
+            other_active_admins = [
+                other
+                for other in repository.list_users(
+                    role=Role.ADMIN, is_active=True
+                )
+                if other.id != user.id
+            ]
+            if other_active_admins:
+                raise AuthorizationError(
+                    "Admins cannot deactivate their own account."
+                )
+
+        def _audit_factory(target_user_id):
+            return build_admin_audit_event(
+                EVENT_USER_ACTIVATED if is_active else EVENT_USER_DEACTIVATED,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                target_user_id=target_user_id,
+                detail={"is_active": bool(is_active)},
+            )
+
+        audit_factory = _audit_factory if actor_role is not None else None
+        updated = repository.update_user_active_status_with_admin_guard(
+            user_id, is_active, audit_event_factory=audit_factory
+        )
+        return _safe_user(updated)
 
 
 def _validate_role_filter(value):

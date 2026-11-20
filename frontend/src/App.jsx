@@ -16,6 +16,7 @@ import EvaluationDashboard from './pages/EvaluationDashboard.jsx'
 import TransferRequests from './pages/TransferRequests.jsx'
 import TransferRequestDetails from './pages/TransferRequestDetails.jsx'
 import RegistrarTransfers from './pages/RegistrarTransfers.jsx'
+import OwnershipCreate from './pages/OwnershipCreate.jsx'
 import Landing from './pages/Landing.jsx'
 
 const supportedRoles = ['CITIZEN', 'REGISTRAR', 'VERIFICATION_OFFICER', 'ADMIN']
@@ -45,6 +46,10 @@ function AppRoutes() {
 
           <Route element={<ProtectedRoute allowedRoles={['REGISTRAR']} />} path="registrar/transfers">
             <Route element={<RegistrarTransfers />} index />
+          </Route>
+
+          <Route element={<ProtectedRoute allowedRoles={['REGISTRAR']} />} path="registrar/ownership">
+            <Route element={<OwnershipCreate />} index />
           </Route>
 
           <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
