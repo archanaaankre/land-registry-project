@@ -73,6 +73,8 @@ class UserModel(db.Model):
             password_hash=self.password_hash,
             role=Role(self.role),
             is_active=self.is_active,
+            created_at=self.created_at,
+            updated_at=self.updated_at,
         )
 
 
@@ -260,109 +262,6 @@ class TransferAuditEventModel(db.Model):
         )
 
 
-class DocumentHashModel(db.Model):
-    """Stored trusted SHA-256 hashes of documents for integrity verification."""
-
-    __tablename__ = "document_hashes"
-
-    document_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    parcel_id: Mapped[str | None] = mapped_column(
-        String(64), ForeignKey("parcels.parcel_id"), nullable=True, index=True
-    )
-    document_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    document_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    uploaded_by: Mapped[str] = mapped_column(
-        String(128), ForeignKey("users.id"), nullable=False, index=True
-    )
-    uploaded_at: Mapped[object] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=utc_now
-    )
-    verification_count: Mapped[int] = mapped_column(default=0, nullable=False)
-    last_verified_at: Mapped[object | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    last_verification_status: Mapped[str | None] = mapped_column(
-        String(16), nullable=True
-    )
-
-    __table_args__ = (
-        Index(
-            "uq_document_hashes_name_per_parcel",
-            "document_name",
-            "parcel_id",
-            unique=True,
-            postgresql_where=text("parcel_id IS NOT NULL"),
-            sqlite_where=text("parcel_id IS NOT NULL"),
-        ),
-    )
-
-    def to_domain(self):
-        from app.document_integrity.models import DocumentHash
-
-        return DocumentHash(
-            document_id=self.document_id,
-            parcel_id=self.parcel_id,
-            document_name=self.document_name,
-            document_hash=self.document_hash,
-            uploaded_by=self.uploaded_by,
-            uploaded_at=self.uploaded_at,
-            verification_count=self.verification_count,
-            last_verified_at=self.last_verified_at,
-            last_verification_status=(
-                DocumentVerificationStatus(self.last_verification_status)
-                if self.last_verification_status is not None
-                else None
-            ),
-        )
-
-
-class SupportingDocumentModel(db.Model):
-    """A supporting document persisted with its content for later review.
-
-    Supports two optional associations: ``parcel_id`` and
-    ``transfer_request_id``. Association consistency (matching parcel,
-    existence of the request) is validated in the service layer; the foreign
-    keys enforce referential integrity at the database level. No uniqueness
-    constraint on ``document_name``/``parcel_id`` is applied — multiple
-    supporting documents with the same name are allowed.
-    """
-
-    __tablename__ = "supporting_documents"
-
-    supporting_document_id: Mapped[str] = mapped_column(
-        String(64), primary_key=True
-    )
-    parcel_id: Mapped[str | None] = mapped_column(
-        String(64), ForeignKey("parcels.parcel_id"), nullable=True, index=True
-    )
-    transfer_request_id: Mapped[str | None] = mapped_column(
-        String(64), ForeignKey("transfer_requests.request_id"), nullable=True, index=True
-    )
-    document_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    document_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    uploaded_by: Mapped[str] = mapped_column(
-        String(128), ForeignKey("users.id"), nullable=False, index=True
-    )
-    uploaded_at: Mapped[object] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=utc_now
-    )
-
-    def to_domain(self):
-        return SupportingDocument(
-            supporting_document_id=self.supporting_document_id,
-            parcel_id=self.parcel_id,
-            transfer_request_id=self.transfer_request_id,
-            document_name=self.document_name,
-            document_hash=self.document_hash,
-            data=self.data,
-            content_type=self.content_type,
-            uploaded_by=self.uploaded_by,
-            uploaded_at=self.uploaded_at,
-        )
-
-
 class AdminAuditEventModel(db.Model):
     """Durable audit trail for admin user-management actions.
 
@@ -430,4 +329,107 @@ class AdminAuditEventModel(db.Model):
             target_user_id=self.target_user_id or "",
             created_at=self.created_at,
             detail=detail,
+        )
+
+
+class DocumentHashModel(db.Model):
+    """Stored trusted SHA-256 hashes of documents for integrity verification."""
+
+    __tablename__ = "document_hashes"
+
+    document_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    parcel_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("parcels.parcel_id"), nullable=True, index=True
+    )
+    document_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    document_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    uploaded_by: Mapped[str] = mapped_column(
+        String(128), ForeignKey("users.id"), nullable=False, index=True
+    )
+    uploaded_at: Mapped[object] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    verification_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    last_verified_at: Mapped[object | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_verification_status: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_document_hashes_name_per_parcel",
+            "document_name",
+            "parcel_id",
+            unique=True,
+            postgresql_where=text("parcel_id IS NOT NULL"),
+            sqlite_where=text("parcel_id IS NOT NULL"),
+        ),
+    )
+
+    def to_domain(self):
+        from app.document_integrity.models import DocumentHash
+
+        return DocumentHash(
+            document_id=self.document_id,
+            parcel_id=self.parcel_id,
+            document_name=self.document_name,
+            document_hash=self.document_hash,
+            uploaded_by=self.uploaded_by,
+            uploaded_at=self.uploaded_at,
+            verification_count=self.verification_count,
+            last_verified_at=self.last_verified_at,
+            last_verification_status=(
+                DocumentVerificationStatus(self.last_verification_status)
+                if self.last_verification_status is not None
+                else None
+            ),
+        )
+
+
+class SupportingDocumentModel(db.Model):
+    """A supporting document persisted with its content for later review.
+
+    Supports two optional associations: ``parcel_id`` and
+    ``transfer_request_id``. Association consistency (matching parcel,
+    existence of the request) is validated in the service layer; the foreign
+    keys enforce referential integrity at the database level. No uniqueness
+    constraint on ``document_name``/``parcel_id`` is applied â€” multiple
+    supporting documents with the same name are allowed.
+    """
+
+    __tablename__ = "supporting_documents"
+
+    supporting_document_id: Mapped[str] = mapped_column(
+        String(64), primary_key=True
+    )
+    parcel_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("parcels.parcel_id"), nullable=True, index=True
+    )
+    transfer_request_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("transfer_requests.request_id"), nullable=True, index=True
+    )
+    document_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    document_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    uploaded_by: Mapped[str] = mapped_column(
+        String(128), ForeignKey("users.id"), nullable=False, index=True
+    )
+    uploaded_at: Mapped[object] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    def to_domain(self):
+        return SupportingDocument(
+            supporting_document_id=self.supporting_document_id,
+            parcel_id=self.parcel_id,
+            transfer_request_id=self.transfer_request_id,
+            document_name=self.document_name,
+            document_hash=self.document_hash,
+            data=self.data,
+            content_type=self.content_type,
+            uploaded_by=self.uploaded_by,
+            uploaded_at=self.uploaded_at,
         )

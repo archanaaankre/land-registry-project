@@ -34,6 +34,9 @@ from app.persistence.models import (
 from app.registry.validation import normalize_cadastral_number
 
 
+_UNSET = object()
+
+
 def _is_cadastral_number_conflict(error):
     constraint_name = getattr(
         getattr(error.orig, "diag", None), "constraint_name", None
@@ -136,21 +139,30 @@ _UNSET = object()
 
 
 class SqlAlchemyUserRepository:
-    def create_user(
-        self, *, name, email, password_hash, role, audit_event_factory=None
-    ):
-        user = UserModel(
-            id=_user_id_from_email(email),
-            name=name.strip(),
-            email=email.strip().lower(),
-            password_hash=password_hash,
-            role=role.value if hasattr(role, "value") else str(role),
-        )
-        db.session.add(user)
-        if audit_event_factory is not None:
-            db.session.flush()
-            db.session.add(_admin_audit_event_model(audit_event_factory(user.id)))
-        _commit()
+    def create_user(self, *, name, email, password_hash, role, audit_event_factory=None):
+        try:
+            user = UserModel(
+                id=_user_id_from_email(email),
+                name=name.strip(),
+                email=email.strip().lower(),
+                password_hash=password_hash,
+                role=role.value if hasattr(role, "value") else str(role),
+            )
+            db.session.add(user)
+            if audit_event_factory is not None:
+                # Flush the parent row first so the audit event's FK always
+                # references an existing user (same convention as transfers).
+                db.session.flush()
+                db.session.add(
+                    _admin_audit_event_model(audit_event_factory(user.id))
+                )
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            raise InvalidInputError("A matching database record already exists.") from None
+        except SQLAlchemyError:
+            db.session.rollback()
+            raise DatabaseUnavailableError() from None
         return user.to_domain()
 
     def create_initial_admin(self, *, name, email, password_hash):
@@ -280,45 +292,32 @@ class SqlAlchemyUserRepository:
         _commit()
         return user.to_domain()
 
-    def update_user_active_status(self, user_id, is_active):
-        """Compatibility alias for Person 2's service method name; guarded."""
-        return self.update_user_status(user_id, is_active)
+    def update_user_role_with_admin_guard(self, user_id, role, audit_event_factory=None):
+        """Atomically change a role while preserving the last active admin.
 
-    def update_user_role_with_admin_guard(
-        self, user_id, role, audit_event_factory=None
-    ):
-        """Atomically change a role while preserving the last active Admin."""
+        Takes a row lock on every active ADMIN row (in deterministic id
+        order, so concurrent admin-removal transactions serialize without
+        deadlocking) inside the same transaction that applies the update, and
+        rolls everything back if removing the target as an active admin would
+        leave the system with no active admin. Reusing the existing checked
+        invariant, just inside the locked transaction.
+        """
         role = Role(role)
         return self._guarded_admin_mutation(
             user_id, new_role=role, audit_event_factory=audit_event_factory
         )
 
-    def update_user_active_status_with_admin_guard(
-        self, user_id, is_active, audit_event_factory=None
-    ):
-        """Atomically change activation while preserving the last active Admin."""
+    def update_user_active_status_with_admin_guard(self, user_id, is_active, audit_event_factory=None):
+        """Atomically change activation while preserving the last active admin.
+
+        Same locking discipline as update_user_role_with_admin_guard: the
+        last-active-admin check and the UPDATE happen in one transaction.
+        """
         return self._guarded_admin_mutation(
-            user_id,
-            set_active=bool(is_active),
-            audit_event_factory=audit_event_factory,
+            user_id, set_active=bool(is_active), audit_event_factory=audit_event_factory
         )
 
-    def _guarded_admin_mutation(
-        self,
-        user_id,
-        *,
-        new_role=_UNSET,
-        set_active=_UNSET,
-        audit_event_factory=None,
-    ):
-        """Concurrency-safe Admin role/status mutation.
-
-        Protects the last active Admin from demotion or deactivation.
-        Admin-removal transactions lock the full set of active admin rows in
-        id order, so they serialize instead of deadlocking. The audit row is
-        inserted in the same transaction as the mutation; if it fails, both
-        roll back together.
-        """
+    def _guarded_admin_mutation(self, user_id, *, new_role=_UNSET, set_active=_UNSET, audit_event_factory=None):
         session = db.session
         try:
             # Step 1: unlocked read to see whether the caller is even
@@ -345,7 +344,9 @@ class SqlAlchemyUserRepository:
                 )
 
             if _loses_active_admin(target):
-                # Step 2: lock the full set of active admin rows in id order.
+                # Step 2: lock the full set of active admin rows in id
+                # order. Every admin-removal transaction takes these locks
+                # in the same order, so they serialize instead of deadlocking.
                 admin_ids = [
                     row[0]
                     for row in session.execute(
@@ -366,9 +367,7 @@ class SqlAlchemyUserRepository:
                     .with_for_update()
                 ).scalar_one()
                 if _loses_active_admin(target):
-                    remaining = [
-                        admin_id for admin_id in admin_ids if admin_id != target.id
-                    ]
+                    remaining = [admin_id for admin_id in admin_ids if admin_id != target.id]
                     if not remaining:
                         raise ResourceConflictError(
                             "This change would leave the system without an active admin."
@@ -389,6 +388,8 @@ class SqlAlchemyUserRepository:
                     "The user changed before this update could be saved."
                 )
             if audit_event_factory is not None:
+                # The audit row commits in the SAME transaction as the
+                # mutation; if it fails, both roll back together.
                 session.add(
                     _admin_audit_event_model(audit_event_factory(user_id))
                 )
@@ -409,6 +410,11 @@ class SqlAlchemyUserRepository:
             session.rollback()
             raise
         return self.get_user_by_id(user_id)
+
+    def update_user_active_status(self, user_id, is_active):
+        """Compatibility alias for Person 2's service method name; guarded."""
+        return self.update_user_status(user_id, is_active)
+
 
 
 def _user_id_from_email(email):
@@ -1172,6 +1178,30 @@ class SqlAlchemyTransferRepository:
         return domain_events
 
 
+def _admin_audit_event_model(event):
+    """Map a domain AdminAuditEvent onto its persistence row.
+
+    Only safe, non-secret identifiers are stored. Role transitions come from
+    ``event.detail`` (``from_role``/``to_role``; ``role`` for USER_CREATED);
+    activation transitions are implied by ``event_type``.
+    """
+    detail = getattr(event, "detail", None) or {}
+    return AdminAuditEventModel(
+        event_id=event.event_id,
+        actor_id=event.actor_id or None,
+        actor_role=(
+            event.actor_role.value
+            if hasattr(event.actor_role, "value")
+            else str(event.actor_role)
+        ),
+        target_user_id=event.target_user_id or None,
+        event_type=event.event_type,
+        from_role=detail.get("from_role"),
+        to_role=detail.get("to_role", detail.get("role")),
+        created_at=event.created_at,
+    )
+
+
 def _audit_event_model(event):
     return TransferAuditEventModel(
         event_id=event.event_id,
@@ -1187,6 +1217,13 @@ def _audit_event_model(event):
 
 
 def repository_bootstrap(app):
+    if app.config.get("AUTH_USER_REPOSITORY") is None:
+        # A previously created AuthApiService may own the repository even
+        # when the config key was never set (e.g. injected in tests).
+        service = app.extensions.get("auth_api_service")
+        repository = getattr(service, "_repository", None)
+        if repository is not None:
+            app.config["AUTH_USER_REPOSITORY"] = repository
     if app.testing:
         return
     if app.config.get("AUTH_USER_REPOSITORY") is None:

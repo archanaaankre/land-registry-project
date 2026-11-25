@@ -45,10 +45,11 @@ export async function listAdminUsers({ role, isActive, signal } = {}) {
   const { data } = await adminRequest((token) =>
     apiGet(`/admin/users${query}`, { signal, token }),
   )
-  if (!Array.isArray(data?.items)) {
+  const items = data?.users ?? data?.items
+  if (!Array.isArray(items)) {
     throw new ApiError('We received an unexpected response. Please try again.')
   }
-  return data.items.map(requireUser)
+  return items.map(requireUser)
 }
 
 export async function createAdminUser(payload) {

@@ -17,7 +17,7 @@ If you are developing a production application, we recommend using TypeScript wi
 
 ## Manual frontend workflow checks
 
-The frontend has no automated test runner or test suite. These checks are for a controlled end-to-end environment using the existing Flask API. They are not live test results. Never create or modify records without authorization, and use only disposable test data and accounts.
+There is an automated test suite (`npm test`, using Node's built-in runner for `.test.js` service/validation modules). The broader frontend still has no component-level test runner (no DOM rendering tests). Automated tests are not a substitute for live integration testing. These checks are for a controlled end-to-end environment using the existing Flask API. They are not live test results. Never create or modify records without authorization, and use only disposable test data and accounts.
 
 ### Preconditions
 
@@ -42,6 +42,7 @@ All paths below are relative to `VITE_API_BASE_URL`. Authenticated service calls
 | `PATCH /parcels/{parcelId}/status` | `{ status: "ACTIVE" \| "INACTIVE" \| "DISPUTED" }` | Registrar only. Returns the updated `parcel`; a request must change the current status. |
 | `GET /parcels/{parcelId}` | None | Response contains `parcel` with string `parcel_id`. |
 | `GET /parcels/{parcelId}/ownership` | None | Response contains an `items` array. |
+| `POST /ownership` | `{ ownership_id, parcel_id, owner_id, share, status }` (`share` as a JSON number, `owner_id` an existing citizen account, `status` one of `ACTIVE`, `INACTIVE`, `DISPUTED`) | Registrar only. Response contains `ownership` with `ownership_id`, `parcel_id`, `owner_id`, `share` (string), `status`, `created_at`, `updated_at`. 400 for invalid input (incl. non-citizen owner), 404 for missing parcel/owner, 409 for duplicate active owner or over-100% active shares. |
 | `GET /transfers` | None | Response contains an `items` array. |
 | `POST /transfers` | `{ parcel_id, buyer_reference }` | Response contains `transfer` with a non-empty `request_id` and `status`. |
 | `GET /transfers/{requestId}` | None | Response contains a matching `transfer` with `request_id` and `status`, and a `history` array. |
@@ -84,6 +85,15 @@ For each case, record **Pass**, **Fail**, or **Blocked**, the test account role,
 - [ ] **REG-4 — Reject:** For a separate authorized disposable test request, enter a non-empty reason and verify `POST /registrar/transfers/{requestId}/reject` sends `{ reason }`. Confirm the response-driven status/history appears after reload.
 - [ ] **REG-5 — Review failure:** Cause an authorized controlled review request to fail. Verify the error is shown and the request is not presented as approved, rejected, or completed unless the API subsequently reports that result.
 - [ ] **REG-6 — Duplicate action prevention:** While an action is pending, verify review controls are disabled and repeated submissions do not issue duplicate requests.
+
+#### Registrar ownership creation
+
+- [ ] **OWN-1 — Record ownership page access:** Sign in with an authorized registrar and confirm the "Record Ownership" navigation entry opens `/registrar/ownership`. Sign in with a non-registrar role and confirm the route redirects and the navigation entry is absent.
+- [ ] **OWN-2 — Parcel selection and existing records:** Verify `GET /parcels` populates the parcel select and that selecting a parcel issues `GET /parcels/{parcelId}/ownership` showing recorded ACTIVE shares.
+- [ ] **OWN-3 — Create with valid input:** Using a disposable test parcel and a disposable citizen account, submit a valid `POST /ownership`. Verify the exact five fields are sent, `share` is a JSON number, and success appears only after the API returns `ownership`.
+- [ ] **OWN-4 — Validation and duplicate prevention:** Submit with missing owner ID, invalid identifier characters, or a share of zero/over 100/with too many decimals; verify client validation stops the POST. While a submission is deliberately delayed, verify the submit control is disabled and no second POST is sent.
+- [ ] **OWN-5 — Backend errors:** With disposable test data, trigger an invalid-input response (e.g. non-citizen owner), a not-found parcel, and a share/duplicate conflict; verify operation-specific errors are shown, no success message appears, and failed records are not shown.
+- [ ] **OWN-6 — Refresh after create:** After a successful create, verify the parcel's ownership list and recorded active share re-fetch from the API and include the new record.
 
 #### Status integrity and evaluation
 

@@ -41,6 +41,10 @@ class User:
     role: Role
     name: str = ""
     is_active: bool = True
+    # Populated when constructed from persistence; optional so domain-level
+    # construction stays compatible. Never contains authentication secrets.
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 @dataclass(frozen=True)

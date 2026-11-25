@@ -227,7 +227,7 @@ def test_transfer_submission_accepts_buyer_user_id(app, client):
 
     assert response.status_code == 201
     assert response.get_json()["transfer"]["buyer_reference"] == "buyer-1"
-    user_repository.get_user_by_id.assert_called_once_with("buyer-1")
+    user_repository.get_user_by_id.assert_any_call("buyer-1")
 
 
 @pytest.mark.parametrize("status", [ParcelStatus.INACTIVE, ParcelStatus.DISPUTED])

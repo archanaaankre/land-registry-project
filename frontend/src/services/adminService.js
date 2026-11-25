@@ -11,7 +11,7 @@ export async function listAdminUsers({ signal, search, role, isActive } = {}) {
 
   try {
     const { data } = await apiGet(path, { signal, token: getAccessToken() })
-    return data.items ?? []
+    return data.users ?? data.items ?? []
   } catch (error) {
     if (error.name === 'AbortError') throw error
     if (error.status === 401) {

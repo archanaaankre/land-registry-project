@@ -233,54 +233,96 @@ def current_user():
     )
 
 
+def _validate_admin_role_filter(value):
+    if value is None:
+        return None
+    try:
+        return Role(value)
+    except (TypeError, ValueError):
+        raise InvalidInputError("Unsupported role.", field="role")
+
+
+def _validate_admin_active_filter(value):
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise InvalidInputError("is_active must be 'true' or 'false'.", field="is_active")
+
+
 @bp.route("/admin/users", methods=["POST"])
 @roles_required(Role.ADMIN)
 def create_admin_user():
-    user = _admin_user_service().create_user(
+    result = _admin_service().create_admin_user(
         _json_body(), actor_id=g.current_user_id, actor_role=g.current_user_role
     )
-    return jsonify({"user": user}), 201
+    return jsonify(result), 201
 
 
 @bp.route("/admin/users", methods=["GET"])
 @roles_required(Role.ADMIN)
 def list_admin_users():
-    users = _admin_user_service().list_users(
+    users = _admin_service().list_users(
         search=request.args.get("search"),
-        role=request.args.get("role"),
-        is_active=request.args.get("is_active"),
+        role=_validate_admin_role_filter(request.args.get("role")),
+        is_active=_validate_admin_active_filter(request.args.get("is_active")),
     )
-    return jsonify({"items": users})
+    payload = [_user_response(user) for user in users]
+    return jsonify({"users": payload, "items": payload})
+
+
+def _admin_safe_user(user):
+    """Safe user view for Admin detail responses (no timestamps)."""
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role.value,
+        "is_active": user.is_active,
+    }
 
 
 @bp.route("/admin/users/<user_id>", methods=["GET"])
 @roles_required(Role.ADMIN)
 def get_admin_user(user_id):
-    return jsonify({"user": _admin_user_service().get_user(user_id)})
+    return jsonify({"user": _admin_safe_user(_admin_service().get_user(user_id))})
 
 
 @bp.route("/admin/users/<user_id>/role", methods=["PATCH"])
 @roles_required(Role.ADMIN)
 def update_admin_user_role(user_id):
-    user = _admin_user_service().update_role(
+    body = _json_body()
+    if "role" not in body:
+        raise InvalidInputError("Required fields are missing: role.", field="role")
+    user = _admin_service().update_user_role(
         user_id,
-        _json_body(),
+        body["role"],
         actor_id=g.current_user_id,
         actor_role=g.current_user_role,
     )
-    return jsonify({"user": user})
+    return jsonify({"user": _user_response(user)})
 
 
 @bp.route("/admin/users/<user_id>/status", methods=["PATCH"])
 @roles_required(Role.ADMIN)
 def update_admin_user_status(user_id):
-    user = _admin_user_service().update_status(
+    body = _json_body()
+    if "is_active" not in body:
+        raise InvalidInputError(
+            "Required fields are missing: is_active.", field="is_active"
+        )
+    if not isinstance(body["is_active"], bool):
+        raise InvalidInputError("is_active must be a boolean.", field="is_active")
+    user = _admin_service().update_user_active_status(
         user_id,
-        _json_body(),
+        body["is_active"],
         actor_id=g.current_user_id,
         actor_role=g.current_user_role,
     )
-    return jsonify({"user": user})
+    return jsonify({"user": _user_response(user)})
 
 
 @bp.route("/parcels", methods=["GET"])
