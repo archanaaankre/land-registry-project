@@ -189,6 +189,25 @@ def test_all_roles_can_list_transfers(seed, role):
     ]
 
 
+def test_only_registrar_can_list_review_queue(seed):
+    registrar_response = seed.client.get(
+        "/api/registrar/transfers",
+        headers=headers(seed, Role.REGISTRAR),
+    )
+    assert registrar_response.status_code == 200
+    assert [item["request_id"] for item in registrar_response.get_json()["items"]] == [
+        seed.transfer.request_id
+    ]
+
+    for role in (Role.CITIZEN, Role.VERIFICATION_OFFICER, Role.ADMIN):
+        response = seed.client.get(
+            "/api/registrar/transfers",
+            headers=headers(seed, role),
+        )
+        assert response.status_code == 403
+        assert response.get_json()["error"]["code"] == "forbidden"
+
+
 @pytest.mark.parametrize("role", list(Role))
 def test_all_roles_can_read_transfer_detail(seed, role):
     response = seed.client.get(

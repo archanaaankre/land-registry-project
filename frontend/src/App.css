@@ -1473,6 +1473,34 @@ dd {
   margin-top: 0.5rem;
 }
 
+.admin-user-management-page .admin-user-id-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.admin-user-management-page .admin-user-id {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  user-select: all;
+  color: var(--color-text);
+  font-size: 0.9rem;
+}
+
+.admin-user-management-page .admin-user-id-copy {
+  min-height: 2rem;
+  padding: 0.35rem 0.6rem;
+}
+
+.admin-user-management-page .admin-user-id-feedback {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
 @media (max-width: 640px) {
   .stats-grid {
     grid-template-columns: 1fr;

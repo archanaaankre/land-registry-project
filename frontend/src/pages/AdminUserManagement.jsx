@@ -41,6 +41,7 @@ export default function AdminUserManagement() {
   // Edit active state
   const [editActiveError, setEditActiveError] = useState('')
   const [activeProcessing, setActiveProcessing] = useState({})
+  const [copyFeedback, setCopyFeedback] = useState(null)
 
   const loadUsers = useCallback(async (signal) => {
     setLoading(true)
@@ -156,8 +157,20 @@ export default function AdminUserManagement() {
     }
   }
 
+  async function handleCopyUserId(userId) {
+    try {
+      await navigator.clipboard.writeText(userId)
+      setCopyFeedback({ userId, message: 'User ID copied.' })
+    } catch {
+      setCopyFeedback({
+        userId,
+        message: 'Clipboard unavailable. Select and copy the ID.',
+      })
+    }
+  }
+
   return (
-    <main className="registry-page">
+    <main className="registry-page admin-user-management-page">
       <PageHeader
         actions={
           <div className="dashboard-navigation">
@@ -337,6 +350,34 @@ export default function AdminUserManagement() {
             {users.map((userItem) => (
               <article className="ownership-record" key={userItem.id}>
                 <dl>
+                  <div>
+                    <dt>User ID</dt>
+                    <dd>
+                      <div className="admin-user-id-control">
+                        <code className="admin-user-id">{userItem.id}</code>
+                        <button
+                          aria-label={`Copy user ID for ${userItem.name}`}
+                          className="secondary-button admin-user-id-copy"
+                          onClick={() => handleCopyUserId(userItem.id)}
+                          type="button"
+                        >
+                          {copyFeedback?.userId === userItem.id ? 'Copied' : 'Copy'}
+                        </button>
+                      </div>
+                      {copyFeedback?.userId === userItem.id && (
+                        <span
+                          className="admin-user-id-feedback"
+                          role={
+                            copyFeedback.message === 'User ID copied.'
+                              ? 'status'
+                              : 'alert'
+                          }
+                        >
+                          {copyFeedback.message}
+                        </span>
+                      )}
+                    </dd>
+                  </div>
                   <div><dt>Name</dt><dd>{userItem.name}</dd></div>
                   <div><dt>Email</dt><dd>{userItem.email}</dd></div>
                   <div><dt>Role</dt><dd>{userItem.role}</dd></div>

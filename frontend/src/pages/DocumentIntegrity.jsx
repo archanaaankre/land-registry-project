@@ -212,22 +212,32 @@ export default function DocumentIntegrity() {
 
   async function handleDownloadSupportingDocument(documentId) {
     setDownloadingDocId(documentId)
+    let objectUrl = ''
+
     try {
-      const { data } = await downloadSupportingDocument(documentId)
-      const url = URL.createObjectURL(data.data)
+      const { data, filename } = await downloadSupportingDocument(documentId)
+
+      if (!(data instanceof Blob)) {
+        throw new Error('The downloaded document is not a valid file.')
+      }
+
+      objectUrl = URL.createObjectURL(data)
+
       const link = document.createElement('a')
-      link.href = url
-      link.download = data.filename
+      link.href = objectUrl
+      link.download = filename || `${documentId}.bin`
       document.body.appendChild(link)
       link.click()
       link.remove()
-      URL.revokeObjectURL(url)
     } catch (requestError) {
       setSupportingError(
         requestError.message ||
           'The supporting document could not be downloaded. Please try again.',
       )
     } finally {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl)
+      }
       setDownloadingDocId('')
     }
   }
